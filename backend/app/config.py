@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     # NoDecode skips pydantic-settings' default JSON decode of complex env types,
     # so the comma-separated string falls through to the validator below.
     lichess_study_ids: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # Alternative player names to treat as the configured user when matching
+    # study chapter [White]/[Black] tags — primarily for OTB studies where the
+    # user is recorded by real name or initials, not by Lichess username.
+    study_player_aliases: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
     winrate_inaccuracy: float = 5.0
     winrate_mistake: float = 10.0
@@ -28,9 +32,9 @@ class Settings(BaseSettings):
     suppress_above_before: float = 90.0
     suppress_above_after: float = 80.0
 
-    @field_validator("lichess_study_ids", mode="before")
+    @field_validator("lichess_study_ids", "study_player_aliases", mode="before")
     @classmethod
-    def _split_study_ids(cls, v: object) -> object:
+    def _split_csv(cls, v: object) -> object:
         if isinstance(v, str):
             return [s.strip() for s in v.split(",") if s.strip()]
         return v

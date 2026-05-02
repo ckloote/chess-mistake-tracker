@@ -1,0 +1,37 @@
+[Event "Study: Chapter 1"]
+[ChapterURL "https://lichess.org/study/STUDYone/chap0001"]
+[Result "1-0"]
+[Variant "Standard"]
+[ECO "C20"]
+[Opening "King's Pawn Game"]
+[White "configured_user"]
+[Black "challenger"]
+[UTCDate "2025.03.10"]
+[UTCTime "18:00:00"]
+
+1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6?? 4. Qxf7# 1-0
+
+
+[Event "Study: Chapter 2"]
+[Site "https://lichess.org/study/STUDYone/chap0002"]
+[Result "0-1"]
+[Variant "Standard"]
+[ECO "B20"]
+[White "OpponentX"]
+[Black "configured_user"]
+[UTCDate "2025.03.12"]
+[UTCTime "20:30:00"]
+
+1. e4 c5 2. d4 cxd4 3. c3?! dxc3 4. Nxc3 Nc6 5. Nf3 d6 6. Bc4 a6 0-1
+
+
+[Event "Study: Chapter 3 - GM analysis"]
+[Site "https://lichess.org/study/STUDYone/chap0003"]
+[Result "1/2-1/2"]
+[Variant "Standard"]
+[ECO "D02"]
+[White "Carlsen, Magnus"]
+[Black "Caruana, Fabiano"]
+[UTCDate "2018.11.09"]
+
+1. d4 Nf6 2. Nf3 d5 1/2-1/2

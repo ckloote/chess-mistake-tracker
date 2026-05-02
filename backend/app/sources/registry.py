@@ -3,9 +3,11 @@ from __future__ import annotations
 
 from backend.app.sources.base import GameSource
 from backend.app.sources.lichess_online import LichessOnlineSource
+from backend.app.sources.lichess_study import LichessStudySource
 
 _REGISTRY: dict[str, type[GameSource]] = {
     LichessOnlineSource.name: LichessOnlineSource,
+    LichessStudySource.name: LichessStudySource,
 }
 
 

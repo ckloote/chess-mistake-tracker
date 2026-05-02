@@ -462,6 +462,6 @@ If/when remote hosting is desired, Railway remains the lightweight option (consi
 
 ## Open Questions
 
-1. **Chapter-to-game matching for studies.** A study can contain games where the user is white, black, or neither (analysis of pro games, etc.). MVP: detect by matching the configured Lichess username against the White/Black PGN tags. If neither matches, prompt the user during ingestion to confirm color or skip.
+1. **Chapter-to-game matching for studies.** A study can contain games where the user is white, black, or neither (analysis of pro games, etc.). MVP: detect by matching the configured Lichess username — or any name in the comma-separated `STUDY_PLAYER_ALIASES` env var (case-insensitive) — against the White/Black PGN tags. The alias list is the practical stopgap for OTB studies, where the user is typically recorded by initials or real name rather than Lichess handle. Chapters with no match are skipped and logged at WARNING level. A fuller "prompt during ingestion to confirm color or skip" flow is post-MVP and depends on the Phase 10 classification UI.
 2. **Time pressure for OTB.** No clock data. Time pressure flag will simply not fire for OTB games. Future: optional manual entry of time-on-clock per move during PGN import.
 3. **Multi-game training mode (post-MVP).** Re-present positions where the user previously made mistakes as a "drill" — same position, see if you find the right move now. Useful, deferred.
