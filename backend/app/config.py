@@ -1,8 +1,9 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -15,7 +16,9 @@ class Settings(BaseSettings):
 
     chess_db_path: str = "./data/chess.db"
     lichess_username: str = ""
-    lichess_study_ids: list[str] = Field(default_factory=list)
+    # NoDecode skips pydantic-settings' default JSON decode of complex env types,
+    # so the comma-separated string falls through to the validator below.
+    lichess_study_ids: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
     winrate_inaccuracy: float = 5.0
     winrate_mistake: float = 10.0

@@ -1,0 +1,37 @@
+[Event "Rated blitz game"]
+[Site "https://lichess.org/abcd1234"]
+[Date "2025.01.15"]
+[White "alice"]
+[Black "configured_user"]
+[Result "1-0"]
+[UTCDate "2025.01.15"]
+[UTCTime "12:34:56"]
+[WhiteElo "1850"]
+[BlackElo "1900"]
+[TimeControl "300+0"]
+[Variant "Standard"]
+[ECO "C20"]
+[Opening "King's Pawn Game"]
+
+1. e4 { [%eval 0.21] [%clk 0:05:00] } e5 { [%eval 0.18] [%clk 0:05:00] }
+2. Qh5?! { [%eval -0.42] [%clk 0:04:55] } Nc6 { [%eval -0.35] [%clk 0:04:58] }
+3. Bc4 { [%eval -0.30] [%clk 0:04:50] } Nf6?? { [%eval 9.21] [%clk 0:04:52] }
+4. Qxf7# { [%eval #0] [%clk 0:04:48] } 1-0
+
+
+[Event "Rated bullet game"]
+[Site "https://lichess.org/wxyz5678"]
+[Date "2025.02.20"]
+[White "configured_user"]
+[Black "bob"]
+[Result "1-0"]
+[UTCDate "2025.02.20"]
+[UTCTime "09:00:00"]
+[WhiteElo "1905"]
+[BlackElo "1880"]
+[TimeControl "60+0"]
+[Variant "Standard"]
+[ECO "B01"]
+[Opening "Scandinavian Defense"]
+
+1. e4 d5 2. exd5 Qxd5 3. Nc3 Qa5 4. d4 Nf6 5. Nf3 1-0
