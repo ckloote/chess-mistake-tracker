@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.api.games import router as games_router
+from backend.app.api.mistakes import router as mistakes_router
 
 API_V1_PREFIX = "/api/v1"
 
@@ -16,6 +17,7 @@ app.add_middleware(
 )
 
 app.include_router(games_router, prefix=API_V1_PREFIX)
+app.include_router(mistakes_router, prefix=API_V1_PREFIX)
 
 
 @app.get("/health")

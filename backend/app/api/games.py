@@ -81,6 +81,7 @@ async def analyze_one_game(
     return AnalyzeResponse(
         game_id=result.game_id,
         positions_created=result.positions_created,
+        mistakes_detected=result.mistakes_detected,
         skipped=result.skipped,
         reason=result.reason,
     )
@@ -96,6 +97,7 @@ async def analyze_pending_games(db: Session = Depends(get_db)) -> AnalyzePending
             AnalyzeResponse(
                 game_id=r.game_id,
                 positions_created=r.positions_created,
+                mistakes_detected=r.mistakes_detected,
                 skipped=r.skipped,
                 reason=r.reason,
             )

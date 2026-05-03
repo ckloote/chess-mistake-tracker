@@ -19,6 +19,7 @@ class ImportResponse(BaseModel):
 class AnalyzeResponse(BaseModel):
     game_id: int
     positions_created: int
+    mistakes_detected: int
     skipped: bool
     reason: str | None = None
 

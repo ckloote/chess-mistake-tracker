@@ -11,12 +11,14 @@ from sqlalchemy.orm import Session
 from backend.app.analyzers.base import PositionEval
 from backend.app.analyzers.lichess_pgn import LichessPgnEvalAnalyzer
 from backend.app.models import Game, Position
+from backend.app.services.mistake_detection import detect_mistakes
 
 
 @dataclass(frozen=True)
 class AnalysisResult:
     game_id: int
     positions_created: int
+    mistakes_detected: int
     skipped: bool
     reason: str | None = None
 
@@ -120,6 +122,7 @@ async def analyze_game(session: Session, game: Game) -> AnalysisResult:
         return AnalysisResult(
             game_id=game.id,
             positions_created=0,
+            mistakes_detected=0,
             skipped=True,
             reason="has_evals=False; request analysis on Lichess and re-import.",
         )
@@ -128,16 +131,27 @@ async def analyze_game(session: Session, game: Game) -> AnalysisResult:
     position_evals = await analyzer.analyze_game(game.pgn)
     if not position_evals:
         return AnalysisResult(
-            game_id=game.id, positions_created=0, skipped=True, reason="PGN parse failed."
+            game_id=game.id,
+            positions_created=0,
+            mistakes_detected=0,
+            skipped=True,
+            reason="PGN parse failed.",
         )
 
     session.execute(delete(Position).where(Position.game_id == game.id))
     rows = _to_position_rows(game, position_evals)
     session.add_all(rows)
+    session.flush()  # so detect_mistakes' SELECT sees the new rows
+    mistakes = detect_mistakes(session, game)
     game.analyzed_at = datetime.now(tz=timezone.utc)
     session.commit()
 
-    return AnalysisResult(game_id=game.id, positions_created=len(rows), skipped=False)
+    return AnalysisResult(
+        game_id=game.id,
+        positions_created=len(rows),
+        mistakes_detected=len(mistakes),
+        skipped=False,
+    )
 
 
 async def analyze_pending(session: Session) -> list[AnalysisResult]:
