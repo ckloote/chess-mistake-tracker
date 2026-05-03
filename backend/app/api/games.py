@@ -5,7 +5,14 @@ from sqlalchemy.orm import Session
 from backend.app.config import Settings, get_settings
 from backend.app.db import get_db
 from backend.app.models import Game, User
-from backend.app.schemas.games import GameOut, ImportRequest, ImportResponse
+from backend.app.schemas.games import (
+    AnalyzePendingResponse,
+    AnalyzeResponse,
+    GameOut,
+    ImportRequest,
+    ImportResponse,
+)
+from backend.app.services.analysis import analyze_game, analyze_pending
 from backend.app.services.ingestion import ingest
 from backend.app.sources.registry import get_source, known_sources
 
@@ -60,3 +67,38 @@ def list_games(
     if source is not None:
         stmt = stmt.where(Game.source == source)
     return list(db.scalars(stmt).all())
+
+
+@router.post("/{game_id}/analyze", response_model=AnalyzeResponse)
+async def analyze_one_game(
+    game_id: int,
+    db: Session = Depends(get_db),
+) -> AnalyzeResponse:
+    game = db.get(Game, game_id)
+    if game is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found.")
+    result = await analyze_game(db, game)
+    return AnalyzeResponse(
+        game_id=result.game_id,
+        positions_created=result.positions_created,
+        skipped=result.skipped,
+        reason=result.reason,
+    )
+
+
+@router.post("/analyze-pending", response_model=AnalyzePendingResponse)
+async def analyze_pending_games(db: Session = Depends(get_db)) -> AnalyzePendingResponse:
+    results = await analyze_pending(db)
+    return AnalyzePendingResponse(
+        analyzed=sum(1 for r in results if not r.skipped),
+        skipped=sum(1 for r in results if r.skipped),
+        results=[
+            AnalyzeResponse(
+                game_id=r.game_id,
+                positions_created=r.positions_created,
+                skipped=r.skipped,
+                reason=r.reason,
+            )
+            for r in results
+        ],
+    )

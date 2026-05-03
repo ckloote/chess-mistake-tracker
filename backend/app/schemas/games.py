@@ -16,6 +16,19 @@ class ImportResponse(BaseModel):
     total_in_db: int
 
 
+class AnalyzeResponse(BaseModel):
+    game_id: int
+    positions_created: int
+    skipped: bool
+    reason: str | None = None
+
+
+class AnalyzePendingResponse(BaseModel):
+    analyzed: int
+    skipped: int
+    results: list[AnalyzeResponse]
+
+
 class GameOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
