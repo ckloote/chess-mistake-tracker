@@ -4,9 +4,25 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from backend.app.analyzers.base import EvalResult
 from backend.app.db import Base
 from backend.app.models import Game, Mistake, User
 from backend.app.services.analysis import analyze_game
+
+
+class _NoOpCloud:
+    """Returns nothing for every position — keeps tests off the network.
+    Heuristics fall through to Step 3 / Step 4, which is fine for tests that
+    only care about detection counts and severities."""
+
+    name = "noop"
+    supports_per_position = True
+
+    async def analyze_position(self, fen: str, multipv: int = 1) -> list[EvalResult]:
+        return []
+
+    async def analyze_game(self, pgn: str) -> list:
+        raise NotImplementedError
 
 # Scholars mate. User is black. Black plays Nf6?? on ply 6 (responding to Bc4),
 # losing to 4. Qxf7#. The eval before Nf6 is -30 (slight black edge), after Nf6
@@ -99,7 +115,7 @@ def _make_game(db: Session, pgn: str, user_color: str, source_id: str) -> Game:
 async def test_scholars_mate_flags_one_blunder_on_nf6(db_session: Session) -> None:
     game = _make_game(db_session, SCHOLARS_MATE_PGN, "black", "abcd1234")
 
-    result = await analyze_game(db_session, game)
+    result = await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
     assert result.mistakes_detected == 1
 
     mistakes = db_session.scalars(
@@ -123,7 +139,7 @@ async def test_color_flips_for_white_user(db_session: Session) -> None:
     pgn = SCHOLARS_MATE_PGN.replace('[White "alice"]\n[Black "configured_user"]', '[White "configured_user"]\n[Black "alice"]')
     game = _make_game(db_session, pgn, "white", "alt00000")
 
-    await analyze_game(db_session, game)
+    await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
     mistakes = db_session.scalars(select(Mistake).where(Mistake.game_id == game.id)).all()
     plies = {m.ply for m in mistakes}
     severities = {m.severity for m in mistakes}
@@ -137,7 +153,7 @@ async def test_suppression_already_losing(db_session: Session) -> None:
     user isn't 'giving away' anything — they were already lost."""
     game = _make_game(db_session, ALREADY_LOSING_PGN, "black", "lose0000")
 
-    result = await analyze_game(db_session, game)
+    result = await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
     assert result.mistakes_detected == 0
 
 
@@ -145,14 +161,14 @@ async def test_suppression_still_winning(db_session: Session) -> None:
     """White at +900cp stays at +900cp. No real loss of advantage — suppress."""
     game = _make_game(db_session, ALREADY_WINNING_PGN, "white", "win00000")
 
-    result = await analyze_game(db_session, game)
+    result = await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
     assert result.mistakes_detected == 0
 
 
 async def test_detect_is_idempotent(db_session: Session) -> None:
     game = _make_game(db_session, SCHOLARS_MATE_PGN, "black", "abcd1234")
-    first = await analyze_game(db_session, game)
-    second = await analyze_game(db_session, game)
+    first = await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+    second = await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
     assert first.mistakes_detected == second.mistakes_detected == 1
     rows = db_session.scalars(select(Mistake).where(Mistake.game_id == game.id)).all()
     assert len(rows) == 1
@@ -160,7 +176,7 @@ async def test_detect_is_idempotent(db_session: Session) -> None:
 
 async def test_blunder_mistake_has_endgame_flag_false_in_opening(db_session: Session) -> None:
     game = _make_game(db_session, SCHOLARS_MATE_PGN, "black", "abcd1234")
-    await analyze_game(db_session, game)
+    await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
 
     m = db_session.scalar(select(Mistake).where(Mistake.game_id == game.id))
     assert m is not None

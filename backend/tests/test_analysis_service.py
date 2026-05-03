@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from backend.app.analyzers.base import EvalResult
 from backend.app.db import Base
 from backend.app.models import Game, Position, User
 from backend.app.services.analysis import (
@@ -12,6 +13,17 @@ from backend.app.services.analysis import (
     is_user_move,
     parse_time_control,
 )
+
+
+class _NoOpCloud:
+    name = "noop"
+    supports_per_position = True
+
+    async def analyze_position(self, fen: str, multipv: int = 1) -> list[EvalResult]:
+        return []
+
+    async def analyze_game(self, pgn: str) -> list:
+        raise NotImplementedError
 
 SCHOLARS_MATE_PGN = """\
 [Event "Test"]
@@ -119,7 +131,7 @@ async def test_analyze_game_creates_one_row_per_ply_including_start(
     db_session: Session, user_and_game: tuple[User, Game]
 ) -> None:
     _, game = user_and_game
-    result = await analyze_game(db_session, game)
+    result = await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
 
     # Scholars mate = 7 plies played + ply 0 = 8 rows
     assert result.skipped is False
@@ -135,7 +147,7 @@ async def test_analyze_game_sets_is_user_move_for_black(
     db_session: Session, user_and_game: tuple[User, Game]
 ) -> None:
     _, game = user_and_game
-    await analyze_game(db_session, game)
+    await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
 
     rows = db_session.scalars(
         select(Position).where(Position.game_id == game.id).order_by(Position.ply)
@@ -150,8 +162,8 @@ async def test_analyze_game_is_idempotent(
     db_session: Session, user_and_game: tuple[User, Game]
 ) -> None:
     _, game = user_and_game
-    first = await analyze_game(db_session, game)
-    second = await analyze_game(db_session, game)
+    first = await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+    second = await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
     assert first.positions_created == second.positions_created == 8
     rows = db_session.scalars(select(Position).where(Position.game_id == game.id)).all()
     assert len(rows) == 8  # no duplicates after re-run
@@ -163,7 +175,7 @@ async def test_analyze_game_skips_when_no_evals(
     _, game = user_and_game
     game.has_evals = False
     db_session.commit()
-    result = await analyze_game(db_session, game)
+    result = await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
     assert result.skipped is True
     assert result.positions_created == 0
     assert "has_evals" in (result.reason or "")
@@ -173,7 +185,7 @@ async def test_analyze_game_populates_clock_and_time_spent(
     db_session: Session, user_and_game: tuple[User, Game]
 ) -> None:
     _, game = user_and_game
-    await analyze_game(db_session, game)
+    await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
     rows = db_session.scalars(
         select(Position).where(Position.game_id == game.id).order_by(Position.ply)
     ).all()

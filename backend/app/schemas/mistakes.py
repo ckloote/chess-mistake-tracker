@@ -19,6 +19,7 @@ class MistakeOut(BaseModel):
     best_move_san: str | None
     suggested_step: int | None
     suggestion_confidence: float | None
+    suggestion_debug: dict | None
     classified_step: int | None
     classified_awareness: str | None
     time_pressure_flag: bool
