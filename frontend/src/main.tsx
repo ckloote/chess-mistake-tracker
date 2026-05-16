@@ -11,6 +11,9 @@ import { Mistakes } from './pages/Mistakes.tsx'
 import { MistakeDetail } from './pages/MistakeDetail.tsx'
 import { Stats } from './pages/Stats.tsx'
 import { Settings } from './pages/Settings.tsx'
+import 'chessground/assets/chessground.base.css'
+import 'chessground/assets/chessground.brown.css'
+import 'chessground/assets/chessground.cburnett.css'
 import './index.css'
 
 const queryClient = new QueryClient({

@@ -50,3 +50,53 @@ export function useGamesList(filters: GameFilters) {
       apiFetch<GameListResponse>(`/games${toQuery({ ...filters })}`, { signal }),
   })
 }
+
+export interface Position {
+  ply: number
+  fen: string
+  san: string | null
+  uci: string | null
+  is_user_move: boolean
+  eval_cp: number | null
+  mate_in: number | null
+  clock_ms: number | null
+  time_spent_ms: number | null
+}
+
+export interface Mistake {
+  id: number
+  game_id: number
+  ply: number
+  severity: 'inaccuracy' | 'mistake' | 'blunder'
+  eval_before_cp: number | null
+  eval_after_cp: number | null
+  winrate_before: number
+  winrate_after: number
+  winrate_drop: number
+  best_move_uci: string | null
+  best_move_san: string | null
+  suggested_step: number | null
+  suggestion_confidence: number | null
+  suggestion_debug: Record<string, unknown> | null
+  classified_step: number | null
+  classified_awareness: 'got_it_wrong' | 'didnt_see_it' | null
+  time_pressure_flag: boolean
+  transition_flag: boolean
+  endgame_flag: boolean
+  user_notes: string | null
+  classified_at: string | null
+}
+
+export interface GameDetail extends Game {
+  pgn: string
+  positions: Position[]
+  mistakes: Mistake[]
+}
+
+export function useGame(id: number | undefined) {
+  return useQuery({
+    enabled: id !== undefined && Number.isFinite(id),
+    queryKey: ['game', id] as const,
+    queryFn: ({ signal }) => apiFetch<GameDetail>(`/games/${id}`, { signal }),
+  })
+}
