@@ -1,0 +1,33 @@
+"""Settings endpoints — read/write the AppSettings singleton row.
+
+Lichess username stays read-only via the API: changing it implies re-seeding,
+and there's no MVP UI for re-seeding. The Settings env class still owns
+boot-time fields (DB path, username) — this endpoint only governs runtime-
+tunable knobs."""
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from backend.app.db import get_db
+from backend.app.schemas.settings import SettingsOut, SettingsUpdate
+from backend.app.services.app_settings import get_app_settings
+
+router = APIRouter(prefix="/settings", tags=["settings"])
+
+
+@router.get("", response_model=SettingsOut)
+def read_settings(db: Session = Depends(get_db)) -> SettingsOut:
+    row = get_app_settings(db)
+    # If get_app_settings bootstrapped a new row it was only flushed; commit
+    # here so the row persists across requests.
+    db.commit()
+    return SettingsOut.model_validate(row)
+
+
+@router.patch("", response_model=SettingsOut)
+def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db)) -> SettingsOut:
+    row = get_app_settings(db)
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(row, key, value)
+    db.commit()
+    db.refresh(row)
+    return SettingsOut.model_validate(row)

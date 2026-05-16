@@ -47,3 +47,24 @@ class GameOut(BaseModel):
     has_evals: bool
     analyzed_at: datetime | None
     ingested_at: datetime
+
+
+class PositionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    ply: int
+    fen: str
+    san: str | None
+    uci: str | None
+    is_user_move: bool
+    eval_cp: int | None
+    mate_in: int | None
+    clock_ms: int | None
+    time_spent_ms: int | None
+
+
+class GameListOut(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    items: list[GameOut]

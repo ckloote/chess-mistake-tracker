@@ -13,8 +13,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from backend.app.chess_utils import phase, winrate
-from backend.app.config import Settings, get_settings
-from backend.app.models import Game, Mistake, Position
+from backend.app.models import AppSettings, Game, Mistake, Position
+from backend.app.services.app_settings import get_app_settings
 
 
 @dataclass(frozen=True)
@@ -27,7 +27,7 @@ class _Thresholds:
     suppress_above_after: float
 
     @classmethod
-    def from_settings(cls, s: Settings) -> "_Thresholds":
+    def from_app_settings(cls, s: AppSettings) -> "_Thresholds":
         return cls(
             inaccuracy=s.winrate_inaccuracy,
             mistake=s.winrate_mistake,
@@ -103,8 +103,7 @@ def _median_user_move_time_ms(positions: list[Position]) -> float | None:
 def detect_mistakes(session: Session, game: Game) -> list[Mistake]:
     """Re-derive Mistake rows for one game. Idempotent: drops existing first.
     Caller is responsible for committing the session."""
-    settings = get_settings()
-    t = _Thresholds.from_settings(settings)
+    t = _Thresholds.from_app_settings(get_app_settings(session))
 
     positions = list(
         session.scalars(
