@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import type { Mistake } from '../api/games'
 
 interface Props {
@@ -93,16 +94,25 @@ export function MistakeDetailPanel({
         </div>
       )}
 
-      <div className="mistake-nav" style={{ alignSelf: 'flex-end' }}>
-        <span className="mistake-nav-counter">
-          {index + 1} of {total}
-        </span>
-        <button type="button" onClick={onPrev} disabled={total <= 1}>
-          Prev
-        </button>
-        <button type="button" onClick={onNext} disabled={total <= 1}>
-          Next
-        </button>
+      <div className="mistake-panel-actions">
+        <Link
+          to={`/mistakes/${mistake.id}`}
+          className="mistake-classify-cta"
+        >
+          {mistake.classified_at ? 'Edit classification' : 'Classify'}
+          <span aria-hidden="true"> →</span>
+        </Link>
+        <div className="mistake-nav">
+          <span className="mistake-nav-counter">
+            {index + 1} of {total}
+          </span>
+          <button type="button" onClick={onPrev} disabled={total <= 1}>
+            Prev
+          </button>
+          <button type="button" onClick={onNext} disabled={total <= 1}>
+            Next
+          </button>
+        </div>
       </div>
 
       {mistake.suggestion_debug && (

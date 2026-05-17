@@ -884,6 +884,36 @@ table.games-table tbody tr:hover {
   flex-wrap: wrap;
 }
 
+.mistake-panel-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: var(--rule-soft);
+}
+
+.mistake-classify-cta {
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: 0.6em 1.1em;
+  background: var(--ink-port);
+  color: var(--paper-cream);
+  border: 1px solid var(--ink-port);
+  border-radius: 2px;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.mistake-classify-cta:hover {
+  background: #5e1418;
+  border-color: #5e1418;
+  color: var(--paper-cream);
+}
+
 .chip {
   font-family: var(--font-body);
   font-size: 0.66rem;
