@@ -11,7 +11,10 @@ const LINKS = [
 export function TopNav() {
   return (
     <header className="top-nav">
-      <span className="brand">Chess Mistake Tracker</span>
+      <div className="masthead-brand">
+        <span className="masthead-mark">Mistake Tracker</span>
+        <span className="masthead-subtitle">A Personal Chess Journal</span>
+      </div>
       <nav>
         {LINKS.map((link) => (
           <NavLink

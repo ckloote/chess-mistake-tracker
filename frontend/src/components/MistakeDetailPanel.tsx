@@ -28,80 +28,92 @@ function formatWinrate(w: number): string {
   return `${w.toFixed(1)}%`
 }
 
-export function MistakeDetailPanel({ mistake, total, index, onPrev, onNext }: Props) {
+export function MistakeDetailPanel({
+  mistake,
+  total,
+  index,
+  onPrev,
+  onNext,
+}: Props) {
   const [showDebug, setShowDebug] = useState(false)
-  const stepLabel = mistake.suggested_step
-    ? `Step ${mistake.suggested_step} · ${STEP_LABELS[mistake.suggested_step] ?? ''}`
-    : '—'
 
   return (
     <section className="mistake-panel">
-      <header className="mistake-panel-header">
-        <div>
-          <span className={severityClass(mistake.severity)}>
-            {severityLabel(mistake.severity)}
-          </span>
-          <span className="muted" style={{ marginLeft: 8 }}>
-            ply {mistake.ply}
-          </span>
-        </div>
-        <div className="mistake-nav">
-          <span className="muted">
-            {index + 1} / {total}
-          </span>
-          <button type="button" onClick={onPrev} disabled={total <= 1}>
-            Prev
-          </button>
-          <button type="button" onClick={onNext} disabled={total <= 1}>
-            Next
-          </button>
-        </div>
+      <header className="mistake-panel-eyebrow">
+        <span className={severityClass(mistake.severity)}>
+          {severityLabel(mistake.severity)}
+        </span>
+        <span className="mistake-panel-eyebrow-meta">ply {mistake.ply}</span>
       </header>
+
+      {mistake.suggested_step && (
+        <div className="mistake-headline">
+          <span className="mistake-headline-step">
+            <span className="step-num">{mistake.suggested_step}.</span>
+            {STEP_LABELS[mistake.suggested_step] ?? '—'}
+          </span>
+          {mistake.suggestion_confidence !== null && (
+            <span className="mistake-headline-conf">
+              confidence {(mistake.suggestion_confidence * 100).toFixed(0)}%
+            </span>
+          )}
+        </div>
+      )}
 
       <dl className="mistake-stats">
         <div>
           <dt>Win% before</dt>
-          <dd>{formatWinrate(mistake.winrate_before)}</dd>
+          <dd className="numeric">{formatWinrate(mistake.winrate_before)}</dd>
         </div>
         <div>
           <dt>Win% after</dt>
-          <dd>{formatWinrate(mistake.winrate_after)}</dd>
+          <dd className="numeric">{formatWinrate(mistake.winrate_after)}</dd>
         </div>
         <div>
           <dt>Drop</dt>
-          <dd>−{formatWinrate(mistake.winrate_drop)}</dd>
+          <dd className="numeric drop">−{formatWinrate(mistake.winrate_drop)}</dd>
         </div>
-        <div>
-          <dt>Suggested</dt>
-          <dd>{stepLabel}</dd>
-        </div>
-        {mistake.suggestion_confidence !== null && (
-          <div>
-            <dt>Confidence</dt>
-            <dd>{(mistake.suggestion_confidence * 100).toFixed(0)}%</dd>
-          </div>
-        )}
         {mistake.best_move_san && (
           <div>
             <dt>Engine best</dt>
-            <dd>{mistake.best_move_san}</dd>
+            <dd className="best-move">{mistake.best_move_san}</dd>
           </div>
         )}
       </dl>
 
-      <div className="mistake-flags">
-        {mistake.time_pressure_flag && <span className="chip">time pressure</span>}
-        {mistake.transition_flag && <span className="chip">transition</span>}
-        {mistake.endgame_flag && <span className="chip">endgame</span>}
+      {(mistake.time_pressure_flag ||
+        mistake.transition_flag ||
+        mistake.endgame_flag) && (
+        <div className="mistake-flags">
+          {mistake.time_pressure_flag && (
+            <span className="chip">Time pressure</span>
+          )}
+          {mistake.transition_flag && <span className="chip">Transition</span>}
+          {mistake.endgame_flag && <span className="chip">Endgame</span>}
+        </div>
+      )}
+
+      <div className="mistake-nav" style={{ alignSelf: 'flex-end' }}>
+        <span className="mistake-nav-counter">
+          {index + 1} of {total}
+        </span>
+        <button type="button" onClick={onPrev} disabled={total <= 1}>
+          Prev
+        </button>
+        <button type="button" onClick={onNext} disabled={total <= 1}>
+          Next
+        </button>
       </div>
 
       {mistake.suggestion_debug && (
         <details
           className="mistake-debug"
           open={showDebug}
-          onToggle={(e) => setShowDebug((e.target as HTMLDetailsElement).open)}
+          onToggle={(e) =>
+            setShowDebug((e.target as HTMLDetailsElement).open)
+          }
         >
-          <summary>suggestion_debug</summary>
+          <summary>Suggestion debug</summary>
           <pre>{JSON.stringify(mistake.suggestion_debug, null, 2)}</pre>
         </details>
       )}

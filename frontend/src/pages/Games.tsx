@@ -35,10 +35,15 @@ function formatDate(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? '—' : d.toISOString().slice(0, 10)
 }
 
-function statusLabel(g: { has_evals: boolean; analyzed_at: string | null }): string {
-  if (g.analyzed_at) return 'analyzed'
-  if (g.has_evals) return 'pending'
-  return 'needs Lichess analysis'
+interface GameStatus {
+  label: string
+  className: string
+}
+
+function gameStatus(g: { has_evals: boolean; analyzed_at: string | null }): GameStatus {
+  if (g.analyzed_at) return { label: 'Analyzed', className: 'analyzed' }
+  if (g.has_evals) return { label: 'Pending', className: 'pending' }
+  return { label: 'Needs Lichess analysis', className: 'needs' }
 }
 
 export function Games() {
@@ -54,9 +59,14 @@ export function Games() {
   return (
     <div>
       <div className="page-header">
-        <h1>Games</h1>
-        <span className="muted">
-          {query.isPending ? 'loading…' : `${total} total`}
+        <div className="page-header-title">
+          <span className="eyebrow">Archive</span>
+          <h1>Games</h1>
+        </div>
+        <span className="page-header-meta">
+          {query.isPending
+            ? 'loading…'
+            : `${total} ${total === 1 ? 'game' : 'games'}`}
         </span>
       </div>
 
@@ -95,9 +105,9 @@ export function Games() {
             onChange={(e) => setFilters({ result: e.target.value, page: '1' })}
           >
             <option value="">Any</option>
-            <option value="1-0">1-0</option>
-            <option value="0-1">0-1</option>
-            <option value="1/2-1/2">½-½</option>
+            <option value="1-0">1–0</option>
+            <option value="0-1">0–1</option>
+            <option value="1/2-1/2">½–½</option>
             <option value="*">*</option>
           </select>
         </div>
@@ -125,7 +135,14 @@ export function Games() {
         <button
           type="button"
           onClick={() =>
-            setFilters({ source: '', color: '', result: '', from: '', to: '', page: '1' })
+            setFilters({
+              source: '',
+              color: '',
+              result: '',
+              from: '',
+              to: '',
+              page: '1',
+            })
           }
         >
           Clear
@@ -137,17 +154,28 @@ export function Games() {
       )}
 
       {!query.isError && (
-        <div className="table-wrap">
+        <div className="games-table-wrap">
           {items.length === 0 && !query.isPending ? (
             <div className="empty">
-              No games match these filters. Import some via{' '}
-              <code>POST /api/v1/games/import</code>.
+              <p style={{ margin: 0 }}>No games in the archive yet.</p>
+              <p
+                style={{
+                  margin: '12px 0 0',
+                  fontFamily: 'var(--font-body)',
+                  fontStyle: 'normal',
+                  fontSize: '0.85rem',
+                }}
+                className="muted"
+              >
+                Import some via{' '}
+                <code>POST /api/v1/games/import</code>.
+              </p>
             </div>
           ) : (
-            <table>
+            <table className="games-table">
               <thead>
                 <tr>
-                  <th>Played</th>
+                  <th>Date</th>
                   <th>White</th>
                   <th>Black</th>
                   <th>Result</th>
@@ -157,23 +185,40 @@ export function Games() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((g) => (
-                  <tr key={g.id}>
-                    <td>{formatDate(g.played_at)}</td>
-                    <td>
-                      <Link to={`/games/${g.id}`}>{g.white}</Link>{' '}
-                      {g.white_elo ? <span className="muted">({g.white_elo})</span> : null}
-                    </td>
-                    <td>
-                      {g.black}{' '}
-                      {g.black_elo ? <span className="muted">({g.black_elo})</span> : null}
-                    </td>
-                    <td>{g.result}</td>
-                    <td>{g.user_color}</td>
-                    <td>{g.source}</td>
-                    <td className="muted">{statusLabel(g)}</td>
-                  </tr>
-                ))}
+                {items.map((g) => {
+                  const status = gameStatus(g)
+                  return (
+                    <tr key={g.id}>
+                      <td className="cell-date">{formatDate(g.played_at)}</td>
+                      <td className="cell-player">
+                        <Link to={`/games/${g.id}`}>{g.white}</Link>
+                        {g.white_elo ? (
+                          <span className="cell-elo">{g.white_elo}</span>
+                        ) : null}
+                      </td>
+                      <td className="cell-player">
+                        {g.black}
+                        {g.black_elo ? (
+                          <span className="cell-elo">{g.black_elo}</span>
+                        ) : null}
+                      </td>
+                      <td className="cell-result">{g.result.replace(/-/g, '–')}</td>
+                      <td>
+                        <span className={`cell-color ${g.user_color}`}>
+                          {g.user_color}
+                        </span>
+                      </td>
+                      <td className="cell-source">
+                        {g.source.replace('lichess_', '')}
+                      </td>
+                      <td>
+                        <span className={`status-pill ${status.className}`}>
+                          {status.label}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           )}
@@ -181,7 +226,7 @@ export function Games() {
       )}
 
       <div className="pagination">
-        <span className="muted">
+        <span className="pagination-status">
           Page {page} of {totalPages}
         </span>
         <button

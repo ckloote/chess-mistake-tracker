@@ -5,12 +5,20 @@ export function MistakeDetail() {
   return (
     <div>
       <div className="page-header">
-        <h1>Mistake #{id}</h1>
+        <div className="page-header-title">
+          <span className="eyebrow">Classification</span>
+          <h1>Mistake #{id}</h1>
+        </div>
       </div>
-      <p className="muted">
-        Coming in Phase 10: classification UI — Layer A buttons, Layer B awareness,
-        flag toggles, keyboard shortcuts (1/2/3/4, G/D, Enter, Esc).
-      </p>
+      <div className="placeholder">
+        <span className="placeholder-tag">Forthcoming · Phase 10</span>
+        <p>
+          The classification surface — Layer A buttons (1–4), Layer B awareness
+          (G/D), flag toggles, free-text notes, and a “Save &amp; next” flow
+          that walks through unclassified mistakes without lifting a hand from
+          the keyboard.
+        </p>
+      </div>
     </div>
   )
 }

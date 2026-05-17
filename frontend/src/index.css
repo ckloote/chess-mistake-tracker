@@ -1,18 +1,65 @@
+/* ------------------------------------------------------------------
+   Chess Mistake Tracker — design system
+   Aesthetic: scholarly chess book / tournament bulletin.
+   Warm paper background, editorial serif display, humanist sans body,
+   monospace move notation, classical chess annotation colors.
+   ------------------------------------------------------------------ */
+
 :root {
-  --bg: #fafaf9;
-  --surface: #ffffff;
-  --border: #e5e5e4;
-  --text: #1a1a1a;
-  --text-muted: #6b6b6b;
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --danger: #dc2626;
-  --warning: #d97706;
-  --success: #16a34a;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  font-size: 14px;
-  color: var(--text);
-  background: var(--bg);
+  /* Paper & ink ---------------------------------------------------- */
+  --paper: #f3ede0;            /* warm manuscript paper */
+  --paper-deep: #ece4d2;       /* slightly aged */
+  --paper-cream: #faf4e6;      /* lighter inset / surface */
+  --paper-ink: #181614;        /* deep ink, not pure black */
+  --paper-rule: #c9bda5;       /* hairline rule */
+  --paper-rule-soft: #ddd1b9;
+  --ink-muted: #6e6457;        /* warm gray for secondary text */
+  --ink-faint: #9a8f7e;        /* tertiary / hints */
+
+  /* Chess-book annotation palette ---------------------------------- */
+  --ink-port: #7a1a1f;         /* ?? — blunder. Classical annotation red. */
+  --ink-rust: #b1571e;         /* ?  — mistake */
+  --ink-mustard: #a88513;      /* ?! — inaccuracy */
+  --ink-forest: #3a6635;       /* ! / engine-best green */
+  --ink-azure: #2a4d75;        /* hyperlink ink */
+  --ink-azure-deep: #1c365a;
+
+  /* Surfaces from these ----------------------------------------- */
+  --tint-port: #7a1a1f15;
+  --tint-rust: #b1571e18;
+  --tint-mustard: #a8851318;
+  --tint-forest: #3a663515;
+  --tint-azure: #2a4d7510;
+
+  /* Typography ------------------------------------------------------ */
+  --font-display: 'Fraunces', 'Iowan Old Style', 'Hoefler Text', Georgia, serif;
+  --font-body: 'Instrument Sans', -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* Scale ----------------------------------------------------------- */
+  --step--1: 0.78rem;
+  --step-0: 0.92rem;
+  --step-1: 1.04rem;
+  --step-2: 1.22rem;
+  --step-3: 1.55rem;
+  --step-4: 2.05rem;
+  --step-5: 2.7rem;
+
+  /* Geometry -------------------------------------------------------- */
+  --radius: 2px;
+  --radius-card: 4px;
+  --rule: 1px solid var(--paper-rule);
+  --rule-soft: 1px solid var(--paper-rule-soft);
+
+  color: var(--paper-ink);
+  background: var(--paper);
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-feature-settings: 'kern', 'liga', 'ss01';
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 * {
@@ -21,70 +68,154 @@
 
 body {
   margin: 0;
+  min-height: 100vh;
+  /* Subtle paper grain — SVG noise, very low opacity. Sits behind
+     everything and adds tactile depth without screaming. */
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(
+      circle at 20% 0%,
+      rgba(122, 26, 31, 0.025) 0%,
+      transparent 40%
+    ),
+    radial-gradient(
+      circle at 100% 100%,
+      rgba(58, 102, 53, 0.02) 0%,
+      transparent 50%
+    ),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.09 0 0 0 0 0.08 0 0 0 0 0.07 0 0 0 0.04 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-attachment: fixed;
+}
+
+/* Headings — Fraunces, with optical size cranked for large display.
+   Italic axis available where the markup wants it. */
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 460;
+  font-variation-settings: 'opsz' 100, 'SOFT' 50, 'WONK' 0;
+  color: var(--paper-ink);
+  margin: 0;
+  letter-spacing: -0.012em;
+  line-height: 1.08;
 }
 
 a {
-  color: var(--accent);
+  color: var(--ink-azure);
   text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 140ms ease, color 140ms ease;
 }
 
 a:hover {
-  color: var(--accent-hover);
-  text-decoration: underline;
+  color: var(--ink-azure-deep);
+  border-bottom-color: var(--ink-azure-deep);
 }
 
 button,
 select,
-input {
+input,
+textarea {
   font: inherit;
   color: inherit;
 }
 
 button {
   cursor: pointer;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--paper-rule);
+  border-radius: var(--radius);
+  padding: 0.42em 0.95em;
+  font-size: var(--step--1);
+  font-family: var(--font-body);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--paper-ink);
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
 }
 
 button:hover:not(:disabled) {
-  border-color: var(--accent);
+  border-color: var(--paper-ink);
+  background: var(--paper-cream);
+}
+
+button:focus-visible {
+  outline: none;
+  border-color: var(--ink-port);
+  box-shadow: 0 0 0 3px var(--tint-port);
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
 input,
-select {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 6px 10px;
+select,
+textarea {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--paper-rule);
+  border-radius: 0;
+  padding: 0.35em 0;
+  font-family: var(--font-body);
+  font-size: var(--step-0);
+  transition: border-color 120ms ease;
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   outline: none;
-  border-color: var(--accent);
+  border-bottom-color: var(--ink-port);
 }
 
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23181614' stroke-width='1.2' stroke-linecap='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 2px center;
+  padding-right: 1.3em;
+}
+
+input[type='date'] {
+  font-variant-numeric: tabular-nums;
+}
+
+code, kbd {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--paper-deep);
+  padding: 0.05em 0.4em;
+  border-radius: 2px;
+  color: var(--paper-ink);
+}
+
+kbd {
+  font-size: 0.78em;
+  padding: 0.08em 0.45em;
+  border: 1px solid var(--paper-rule);
+  background: var(--paper-cream);
+  box-shadow: 0 1px 0 var(--paper-rule);
+}
+
+::selection {
+  background: var(--ink-port);
+  color: var(--paper-cream);
+}
+
+/* Default table reset — actual table styling lives in App.css with
+   per-context refinement. */
 table {
   width: 100%;
   border-collapse: collapse;
 }
 
-th,
-td {
-  text-align: left;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-}
-
-th {
-  font-weight: 600;
-  color: var(--text-muted);
-  background: var(--surface);
+/* Reduced-motion users get instant transitions everywhere. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

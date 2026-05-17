@@ -2,12 +2,19 @@ export function Stats() {
   return (
     <div>
       <div className="page-header">
-        <h1>Stats</h1>
+        <div className="page-header-title">
+          <span className="eyebrow">Analysis</span>
+          <h1>Patterns</h1>
+        </div>
       </div>
-      <p className="muted">
-        Coming in Phase 11: step distribution, Layer A × Layer B heatmap, mistakes
-        over time, time-pressure correlation, severity by step.
-      </p>
+      <div className="placeholder">
+        <span className="placeholder-tag">Forthcoming · Phase 11</span>
+        <p>
+          Step distribution, the Layer A × Layer B heatmap, mistakes over time,
+          time-pressure correlation, severity by step — the views that turn a
+          year of classified mistakes into a study program.
+        </p>
+      </div>
     </div>
   )
 }

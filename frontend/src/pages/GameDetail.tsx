@@ -88,7 +88,10 @@ export function GameDetail() {
     return (
       <div>
         <div className="page-header">
-          <h1>Game #{id}</h1>
+          <div className="page-header-title">
+            <span className="eyebrow">Game</span>
+            <h1>#{id}</h1>
+          </div>
         </div>
         <p className="muted">Loading…</p>
       </div>
@@ -98,7 +101,10 @@ export function GameDetail() {
     return (
       <div>
         <div className="page-header">
-          <h1>Game #{id}</h1>
+          <div className="page-header-title">
+            <span className="eyebrow">Game</span>
+            <h1>#{id}</h1>
+          </div>
         </div>
         <div className="error">Failed to load game: {String(error)}</div>
       </div>
@@ -155,12 +161,17 @@ export function GameDetail() {
   return (
     <div>
       <div className="page-header">
-        <h1>
-          {game.white} <span className="muted">vs</span> {game.black}{' '}
-          <span className="muted">· {game.result}</span>
-        </h1>
-        <Link to="/games" className="muted">
-          ← all games
+        <div className="page-header-title">
+          <span className="eyebrow">Game review</span>
+          <h1 className="review-title">
+            <span>{game.white}</span>
+            <span className="vs">versus</span>
+            <span>{game.black}</span>
+            <span className="result">{game.result.replace(/-/g, '–')}</span>
+          </h1>
+        </div>
+        <Link to="/games" className="review-back">
+          ← All games
         </Link>
       </div>
 
@@ -172,10 +183,24 @@ export function GameDetail() {
             lastMove={lastMove}
             arrows={arrows}
           />
-          <div className="board-meta muted">
-            ply {activePly}/{lastPly}
-            {position?.san ? ` · ${position.san}` : ''}
-            <span className="board-keys">←/→ step · shift = mistakes · home/end</span>
+          <div className="board-meta">
+            <span>
+              <span className="ply-marker">{activePly}</span>
+              <span className="faint"> / {lastPly}</span>
+              {position?.san ? (
+                <>
+                  {' · '}
+                  <span className="ply-san">{position.san}</span>
+                </>
+              ) : null}
+            </span>
+            <span className="board-keys">
+              <kbd>←</kbd>
+              <kbd>→</kbd>
+              step
+              {'  '}·{'  '}
+              <kbd>⇧</kbd>+ mistake
+            </span>
           </div>
         </div>
 
@@ -196,7 +221,11 @@ export function GameDetail() {
             />
           )}
           {!activeMistake && mistakesSorted.length > 0 && (
-            <button type="button" className="jump-mistake" onClick={goNextMistake}>
+            <button
+              type="button"
+              className="jump-mistake"
+              onClick={goNextMistake}
+            >
               Jump to first mistake ({mistakesSorted.length} total)
             </button>
           )}

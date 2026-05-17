@@ -33,14 +33,20 @@ function buildPairs(positions: Position[]): PairRow[] {
 }
 
 function severityClass(severity: Mistake['severity']): string {
-  return `severity-badge severity-${severity}`
+  return `severity-mark severity-${severity}`
 }
 
-function severityChar(severity: Mistake['severity']): string {
+// Classical chess-book annotation glyphs.
+function severityGlyph(severity: Mistake['severity']): string {
   return severity === 'blunder' ? '??' : severity === 'mistake' ? '?' : '?!'
 }
 
-export function MoveList({ positions, mistakesByPly, activePly, onSelect }: Props) {
+export function MoveList({
+  positions,
+  mistakesByPly,
+  activePly,
+  onSelect,
+}: Props) {
   const rows = buildPairs(positions)
   const activeRef = useRef<HTMLButtonElement>(null)
 
@@ -56,7 +62,7 @@ export function MoveList({ positions, mistakesByPly, activePly, onSelect }: Prop
         className={activePly === 0 ? 'move-start active' : 'move-start'}
         onClick={() => onSelect(0)}
       >
-        Start
+        Initial position
       </button>
       <table>
         <tbody>
@@ -101,7 +107,13 @@ interface MoveCellProps {
   activeRef: React.RefObject<HTMLButtonElement | null>
 }
 
-function MoveCell({ pos, mistake, active, onSelect, activeRef }: MoveCellProps) {
+function MoveCell({
+  pos,
+  mistake,
+  active,
+  onSelect,
+  activeRef,
+}: MoveCellProps) {
   return (
     <button
       type="button"
@@ -111,8 +123,11 @@ function MoveCell({ pos, mistake, active, onSelect, activeRef }: MoveCellProps) 
     >
       <span className="move-san">{pos.san ?? '…'}</span>
       {mistake && (
-        <span className={severityClass(mistake.severity)} title={mistake.severity}>
-          {severityChar(mistake.severity)}
+        <span
+          className={severityClass(mistake.severity)}
+          title={mistake.severity}
+        >
+          {severityGlyph(mistake.severity)}
         </span>
       )}
     </button>
