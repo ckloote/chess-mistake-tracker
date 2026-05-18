@@ -9,6 +9,7 @@ from backend.app.db import Base
 from backend.app.models import Game, Position, User
 from backend.app.services.analysis import (
     analyze_game,
+    analyze_pending,
     compute_time_spent_ms,
     is_user_move,
     parse_time_control,
@@ -194,3 +195,36 @@ async def test_analyze_game_populates_clock_and_time_spent(
     assert rows[1].time_spent_ms == 0
     # Move 3 (white Qh5): white had 300s, now 295s -> spent 5_000ms
     assert rows[3].time_spent_ms == 5_000
+
+
+# ---- analyze_pending: force=True backfill --------------------------------
+
+async def test_analyze_pending_default_skips_already_analyzed(
+    db_session: Session, user_and_game: tuple[User, Game]
+) -> None:
+    _, game = user_and_game
+    # First pass — runs because analyzed_at is null.
+    first = await analyze_pending(db_session, cloud_analyzer=_NoOpCloud())
+    assert len(first) == 1
+    assert first[0].game_id == game.id
+
+    # Second pass with default force=False — no work, because the game is
+    # now flagged as analyzed.
+    second = await analyze_pending(db_session, cloud_analyzer=_NoOpCloud())
+    assert second == []
+
+
+async def test_analyze_pending_force_reruns_analyzed_games(
+    db_session: Session, user_and_game: tuple[User, Game]
+) -> None:
+    _, game = user_and_game
+    await analyze_pending(db_session, cloud_analyzer=_NoOpCloud())
+
+    forced = await analyze_pending(
+        db_session, cloud_analyzer=_NoOpCloud(), force=True
+    )
+    assert len(forced) == 1
+    assert forced[0].game_id == game.id
+    assert forced[0].skipped is False
+    # analyze_game is idempotent — same position count as the first run.
+    assert forced[0].positions_created == 8

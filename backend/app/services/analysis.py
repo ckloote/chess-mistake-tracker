@@ -166,13 +166,18 @@ async def analyze_game(
 
 
 async def analyze_pending(
-    session: Session, cloud_analyzer: LichessCloudEvalAnalyzer | None = None
+    session: Session,
+    cloud_analyzer: LichessCloudEvalAnalyzer | None = None,
+    force: bool = False,
 ) -> list[AnalysisResult]:
-    """Run analysis on every has_evals=true game that hasn't been analyzed yet.
+    """Run analysis on has_evals=true games. By default only the ones not yet
+    analyzed; with force=True, re-run already-analyzed games too (analyze_game
+    is idempotent — it drops and recreates positions/mistakes per call).
 
     Passes a single cloud analyzer to all calls so its httpx client (and any
     in-process caching it does) is shared across the run."""
-    games = session.scalars(
-        select(Game).where(Game.has_evals.is_(True), Game.analyzed_at.is_(None))
-    ).all()
+    stmt = select(Game).where(Game.has_evals.is_(True))
+    if not force:
+        stmt = stmt.where(Game.analyzed_at.is_(None))
+    games = session.scalars(stmt).all()
     return [await analyze_game(session, g, cloud_analyzer=cloud_analyzer) for g in games]

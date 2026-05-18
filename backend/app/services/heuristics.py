@@ -5,6 +5,12 @@ Suggestion": 4 → 2 → 1 → 3. Step 4 is local (uses surrounding Position row
 already in the DB). Steps 2 and 1 need the engine's preferred move from the
 position before the user moved, so we ask the Lichess cloud-eval endpoint.
 Cloud misses are silent — we fall through to Step 3.
+
+The cloud-eval fetch is unconditional per mistake (not gated on Step 4): the
+engine's preferred move is independently useful for the review UI's "best
+move" arrow, and the result is persisted to Mistake.best_move_uci /
+best_move_san so the frontend can render it without re-parsing
+suggestion_debug.
 """
 from __future__ import annotations
 
@@ -45,6 +51,20 @@ def _parse_uci(uci: str | None) -> chess.Move | None:
         return chess.Move.from_uci(uci)
     except ValueError:
         return None
+
+
+def _uci_to_san(fen: str, uci: str) -> str | None:
+    """Best-effort SAN rendering of a UCI move from a FEN. Returns None if the
+    FEN or UCI is malformed, or the move isn't legal in that position (which
+    would indicate a stale cloud-eval result for a transposed line)."""
+    try:
+        board = chess.Board(fen)
+    except ValueError:
+        return None
+    move = _parse_uci(uci)
+    if move is None or move not in board.legal_moves:
+        return None
+    return board.san(move)
 
 
 def _is_forcing(board: chess.Board, move: chess.Move) -> bool:
@@ -176,6 +196,21 @@ async def assign_heuristic_suggestions(
         nxt = by_ply.get(mistake.ply + 1)
         debug: dict[str, Any] = {}
 
+        # Fetch the engine's preferred move from P_before for every mistake
+        # — needed for Steps 1/2 detection, and independently useful as the
+        # green "best move" arrow in the review UI even when Step 4 fires.
+        m_best_uci: str | None = None
+        if prev is not None and prev.fen:
+            m_best_uci = await _get_best_move(prev.fen, cloud_cache, cloud)
+            debug["m_best_uci"] = m_best_uci
+
+        # Persist on the Mistake row when cloud returned a usable move.
+        # SAN may legitimately be None (illegal/transposed/malformed) — in
+        # that case we still keep the UCI so the UI can draw the arrow.
+        if m_best_uci and prev is not None and prev.fen:
+            mistake.best_move_uci = m_best_uci
+            mistake.best_move_san = _uci_to_san(prev.fen, m_best_uci)
+
         suggested: int | None = None
 
         # Step 4 (highest priority).
@@ -184,12 +219,6 @@ async def assign_heuristic_suggestions(
             debug["step4"] = why
             if fired:
                 suggested = 4
-
-        # Steps 2 and 1 need the engine's best move from P_before.
-        m_best_uci: str | None = None
-        if suggested is None and prev is not None and prev.fen:
-            m_best_uci = await _get_best_move(prev.fen, cloud_cache, cloud)
-            debug["m_best_uci"] = m_best_uci
 
         if suggested is None and m_best_uci and prev is not None and pos is not None:
             fired, why = _step2(prev, pos, m_best_uci, mistake.winrate_before)

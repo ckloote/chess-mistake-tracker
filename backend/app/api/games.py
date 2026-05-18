@@ -163,8 +163,18 @@ async def analyze_one_game(
 
 
 @router.post("/analyze-pending", response_model=AnalyzePendingResponse)
-async def analyze_pending_games(db: Session = Depends(get_db)) -> AnalyzePendingResponse:
-    results = await analyze_pending(db)
+async def analyze_pending_games(
+    force: bool = Query(
+        default=False,
+        description=(
+            "When true, re-run analysis on already-analyzed games too. "
+            "Useful when the heuristic or thresholds change and the existing "
+            "Mistake/Position rows need backfilling."
+        ),
+    ),
+    db: Session = Depends(get_db),
+) -> AnalyzePendingResponse:
+    results = await analyze_pending(db, force=force)
     return AnalyzePendingResponse(
         analyzed=sum(1 for r in results if not r.skipped),
         skipped=sum(1 for r in results if r.skipped),
