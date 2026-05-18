@@ -356,3 +356,89 @@ async def test_best_move_san_handled_when_uci_is_illegal_in_position(
 
     assert mistake.best_move_uci == "e2e5"
     assert mistake.best_move_san is None
+
+
+# -- Cloud → local cascade ------------------------------------------------
+
+class _StubLocalAnalyzer:
+    """Stand-in for StockfishLocalAnalyzer in tests where we want to
+    exercise the cascade logic without spawning a real engine process."""
+
+    name = "stub_local"
+
+    def __init__(self, by_fen: dict[str, list[EvalResult]]) -> None:
+        self._by_fen = by_fen
+        self.calls: list[str] = []
+
+    @property
+    def supports_per_position(self) -> bool:
+        return True
+
+    async def analyze_position(self, fen: str, multipv: int = 1) -> list[EvalResult]:
+        self.calls.append(fen)
+        return list(self._by_fen.get(fen, []))
+
+    async def analyze_game(self, pgn: str) -> list:
+        raise NotImplementedError
+
+
+async def test_local_fills_in_when_cloud_returns_nothing(db: Session) -> None:
+    """The whole point of Stockfish-local: when cloud has no entry for a
+    position, the local analyzer answers and the best move still lands on
+    the Mistake row."""
+    game, mistake, _ = _seed_game_with_step4_mistake(db)
+    cloud = _StubCloudAnalyzer({})  # cloud knows nothing
+    local = _StubLocalAnalyzer({
+        PREV_FEN_USER_TO_MOVE: [
+            EvalResult(cp=15, mate=None, pv=["e2a6"]),
+        ],
+    })
+
+    await assign_heuristic_suggestions(
+        db, game, [mistake], cloud_analyzer=cloud, local_analyzer=local,
+    )
+    db.commit()
+    db.refresh(mistake)
+
+    assert cloud.calls == [PREV_FEN_USER_TO_MOVE]  # cloud was asked first
+    assert local.calls == [PREV_FEN_USER_TO_MOVE]  # local was the fallback
+    assert mistake.best_move_uci == "e2a6"
+    assert mistake.best_move_san == "Qa6"
+
+
+async def test_local_not_consulted_when_cloud_has_an_answer(db: Session) -> None:
+    """Cascade short-circuits: a cloud hit means no local call, which keeps
+    the analyze-pending run fast on positions that ARE in cloud-eval."""
+    game, mistake, _ = _seed_game_with_step4_mistake(db)
+    cloud = _StubCloudAnalyzer({
+        PREV_FEN_USER_TO_MOVE: [EvalResult(cp=10, mate=None, pv=["e2a6"])],
+    })
+    local = _StubLocalAnalyzer({
+        PREV_FEN_USER_TO_MOVE: [EvalResult(cp=99, mate=None, pv=["e2d3"])],
+    })
+
+    await assign_heuristic_suggestions(
+        db, game, [mistake], cloud_analyzer=cloud, local_analyzer=local,
+    )
+    db.commit()
+    db.refresh(mistake)
+
+    assert cloud.calls == [PREV_FEN_USER_TO_MOVE]
+    assert local.calls == []  # never consulted
+    assert mistake.best_move_uci == "e2a6"
+
+
+async def test_no_local_no_problem_when_cloud_empty(db: Session) -> None:
+    """Smoke test for the "feature off" default: cloud empty, no local
+    provided. The mistake still gets a Step assignment (3 by default) and
+    best_move_uci stays None — same as the pre-Stockfish baseline."""
+    game, mistake, _ = _seed_game_with_step4_mistake(db)
+    cloud = _StubCloudAnalyzer({})
+
+    await assign_heuristic_suggestions(db, game, [mistake], cloud_analyzer=cloud)
+    db.commit()
+    db.refresh(mistake)
+
+    assert mistake.best_move_uci is None
+    # Step 4 still fires from local data, independent of cloud presence.
+    assert mistake.suggested_step == 4

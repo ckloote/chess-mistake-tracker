@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from backend.app.analyzers.base import PositionEval
+from backend.app.analyzers.base import Analyzer, PositionEval
 from backend.app.analyzers.lichess_cloud import LichessCloudEvalAnalyzer
 from backend.app.analyzers.lichess_pgn import LichessPgnEvalAnalyzer
 from backend.app.models import Game, Position
@@ -121,12 +121,16 @@ async def analyze_game(
     session: Session,
     game: Game,
     cloud_analyzer: LichessCloudEvalAnalyzer | None = None,
+    local_analyzer: Analyzer | None = None,
 ) -> AnalysisResult:
     """Run the analyzer for one game. Idempotent: drops + recreates Position
     rows. Skips silently if has_evals is False (caller should surface).
 
     `cloud_analyzer` is injectable so unit tests can stub the network. None →
-    real Lichess cloud-eval (production)."""
+    real Lichess cloud-eval (production).
+    `local_analyzer`, when present, fills the cloud's coverage gap during
+    best-move lookups for the heuristic — typically a StockfishLocalAnalyzer
+    started by the caller."""
     if not game.has_evals:
         return AnalysisResult(
             game_id=game.id,
@@ -153,7 +157,9 @@ async def analyze_game(
     session.flush()  # so detect_mistakes' SELECT sees the new rows
     mistakes = detect_mistakes(session, game)
     session.flush()
-    await assign_heuristic_suggestions(session, game, mistakes, cloud_analyzer)
+    await assign_heuristic_suggestions(
+        session, game, mistakes, cloud_analyzer, local_analyzer=local_analyzer
+    )
     game.analyzed_at = datetime.now(tz=timezone.utc)
     session.commit()
 
@@ -168,16 +174,25 @@ async def analyze_game(
 async def analyze_pending(
     session: Session,
     cloud_analyzer: LichessCloudEvalAnalyzer | None = None,
+    local_analyzer: Analyzer | None = None,
     force: bool = False,
 ) -> list[AnalysisResult]:
     """Run analysis on has_evals=true games. By default only the ones not yet
     analyzed; with force=True, re-run already-analyzed games too (analyze_game
     is idempotent — it drops and recreates positions/mistakes per call).
 
-    Passes a single cloud analyzer to all calls so its httpx client (and any
-    in-process caching it does) is shared across the run."""
+    Passes a single cloud analyzer (and single local analyzer when provided)
+    to all calls so the underlying httpx client / Stockfish process is shared
+    across the run."""
     stmt = select(Game).where(Game.has_evals.is_(True))
     if not force:
         stmt = stmt.where(Game.analyzed_at.is_(None))
     games = session.scalars(stmt).all()
-    return [await analyze_game(session, g, cloud_analyzer=cloud_analyzer) for g in games]
+    return [
+        await analyze_game(
+            session, g,
+            cloud_analyzer=cloud_analyzer,
+            local_analyzer=local_analyzer,
+        )
+        for g in games
+    ]

@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     suppress_above_before: float = 90.0
     suppress_above_after: float = 80.0
 
+    # Stockfish-local: empty path → resolve via shutil.which("stockfish").
+    # When even that returns None, the local fallback is silently disabled.
+    stockfish_path: str = ""
+    # Either depth OR time-budget per position. When time_ms > 0 it wins.
+    stockfish_depth: int = 15
+    stockfish_time_ms: int = 0
+
     @field_validator("lichess_study_ids", "study_player_aliases", mode="before")
     @classmethod
     def _split_csv(cls, v: object) -> object:

@@ -1,9 +1,16 @@
+import logging
+from contextlib import asynccontextmanager
 from datetime import date, datetime, time, timezone
+from typing import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
+from backend.app.analyzers.stockfish_local import (
+    StockfishLocalAnalyzer,
+    resolve_stockfish_path,
+)
 from backend.app.config import Settings, get_settings
 from backend.app.db import get_db
 from backend.app.models import Game, Mistake, Position, User
@@ -19,6 +26,8 @@ from backend.app.schemas.mistakes import GameDetailOut
 from backend.app.services.analysis import analyze_game, analyze_pending
 from backend.app.services.ingestion import ingest
 from backend.app.sources.registry import get_source, known_sources
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/games", tags=["games"])
 
@@ -44,6 +53,37 @@ def _start_of_day(d: date) -> datetime:
 
 def _end_of_day(d: date) -> datetime:
     return datetime.combine(d, time.max, tzinfo=timezone.utc)
+
+
+@asynccontextmanager
+async def _maybe_local_engine(
+    settings: Settings,
+) -> AsyncIterator[StockfishLocalAnalyzer | None]:
+    """Yield a started StockfishLocalAnalyzer if a binary is resolvable, else
+    None. Either way the surrounding endpoint gets a single object to pass
+    through and an `async with` guarantee that any subprocess is cleaned up."""
+    path = resolve_stockfish_path(settings.stockfish_path or None)
+    if not path:
+        yield None
+        return
+    analyzer = StockfishLocalAnalyzer(
+        path=path,
+        depth=settings.stockfish_depth,
+        time_ms=settings.stockfish_time_ms,
+    )
+    try:
+        await analyzer.start()
+    except (FileNotFoundError, OSError) as e:
+        log.warning(
+            "Stockfish-local feature configured but failed to start (%s); "
+            "continuing without it.", e,
+        )
+        yield None
+        return
+    try:
+        yield analyzer
+    finally:
+        await analyzer.stop()
 
 
 @router.post("/import", response_model=ImportResponse)
@@ -148,11 +188,13 @@ def get_game(game_id: int, db: Session = Depends(get_db)) -> GameDetailOut:
 async def analyze_one_game(
     game_id: int,
     db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> AnalyzeResponse:
     game = db.get(Game, game_id)
     if game is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found.")
-    result = await analyze_game(db, game)
+    async with _maybe_local_engine(settings) as local:
+        result = await analyze_game(db, game, local_analyzer=local)
     return AnalyzeResponse(
         game_id=result.game_id,
         positions_created=result.positions_created,
@@ -173,8 +215,10 @@ async def analyze_pending_games(
         ),
     ),
     db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> AnalyzePendingResponse:
-    results = await analyze_pending(db, force=force)
+    async with _maybe_local_engine(settings) as local:
+        results = await analyze_pending(db, local_analyzer=local, force=force)
     return AnalyzePendingResponse(
         analyzed=sum(1 for r in results if not r.skipped),
         skipped=sum(1 for r in results if r.skipped),

@@ -20,7 +20,7 @@ import chess
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.analyzers.base import EvalResult
+from backend.app.analyzers.base import Analyzer, EvalResult
 from backend.app.analyzers.lichess_cloud import LichessCloudEvalAnalyzer
 from backend.app.chess_utils.winrate import MATE_CP_EQUIVALENT
 from backend.app.models import Game, Mistake, Position
@@ -74,12 +74,20 @@ def _is_forcing(board: chess.Board, move: chess.Move) -> bool:
 async def _get_best_move(
     fen: str,
     cache: dict[str, list[EvalResult]],
-    analyzer: LichessCloudEvalAnalyzer,
+    cloud: LichessCloudEvalAnalyzer,
+    local: Analyzer | None = None,
 ) -> str | None:
+    """Resolve the engine's preferred move for a FEN. Cloud-eval is consulted
+    first (cheap, async, covers popular positions); when it returns nothing
+    AND a local analyzer is available, we fall back to it for full coverage.
+    Per-fen results are cached so revisited positions in the same run are free.
+    """
     if fen in cache:
         results = cache[fen]
     else:
-        results = await analyzer.analyze_position(fen)
+        results = await cloud.analyze_position(fen)
+        if (not results or not results[0].pv) and local is not None:
+            results = await local.analyze_position(fen)
         cache[fen] = results
     if not results or not results[0].pv:
         return None
@@ -174,9 +182,13 @@ async def assign_heuristic_suggestions(
     game: Game,
     mistakes: list[Mistake],
     cloud_analyzer: LichessCloudEvalAnalyzer | None = None,
+    local_analyzer: Analyzer | None = None,
 ) -> None:
     """Mutates Mistake rows in place with suggested_step, suggestion_confidence,
-    suggestion_debug. Does not commit — the caller (analyze_game) does."""
+    suggestion_debug. Does not commit — the caller (analyze_game) does.
+
+    `local_analyzer`, when provided, fills the gap when cloud-eval returns
+    nothing (most middlegame/endgame positions in non-trending games)."""
     if not mistakes:
         return
 
@@ -201,7 +213,9 @@ async def assign_heuristic_suggestions(
         # green "best move" arrow in the review UI even when Step 4 fires.
         m_best_uci: str | None = None
         if prev is not None and prev.fen:
-            m_best_uci = await _get_best_move(prev.fen, cloud_cache, cloud)
+            m_best_uci = await _get_best_move(
+                prev.fen, cloud_cache, cloud, local=local_analyzer
+            )
             debug["m_best_uci"] = m_best_uci
 
         # Persist on the Mistake row when cloud returned a usable move.
