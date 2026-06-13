@@ -86,6 +86,8 @@ export function MistakeDetail() {
   )
 
   function navigateToNextUnclassified() {
+    // Each new mistake starts in Review; Explore is opt-in per position.
+    setMode('review')
     if (queue.length === 0) {
       navigate('/mistakes')
       return
