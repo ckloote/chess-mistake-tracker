@@ -138,6 +138,19 @@ def _step4(
     forcing = _is_forcing(board_after_user, opp_response)
     if not forcing:
         return False, {"opp_response_uci": nxt.uci, "forcing": False}
+    # A forcing reply that delivers checkmate is the clearest possible failed
+    # blunder check — fire directly from the board. PGNs frequently omit the eval
+    # on the final mating move, which would otherwise leave cp_after_opp None and
+    # wrongly drop a hung mate to the Step 3 default.
+    if opp_response in board_after_user.legal_moves:
+        probe = board_after_user.copy(stack=False)
+        probe.push(opp_response)
+        if probe.is_checkmate():
+            return True, {
+                "opp_response_uci": nxt.uci,
+                "forcing": True,
+                "delivers_mate": True,
+            }
     cp_after_user = _user_view_cp(pos.eval_cp, pos.mate_in, user_color)
     cp_after_opp = _user_view_cp(nxt.eval_cp, nxt.mate_in, user_color)
     if cp_after_user is None or cp_after_opp is None:

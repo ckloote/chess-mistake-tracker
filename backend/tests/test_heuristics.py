@@ -105,6 +105,20 @@ def test_step4_skips_when_no_next_position() -> None:
     assert fired is False
 
 
+def test_step4_fires_on_checkmate_even_without_terminal_eval() -> None:
+    """Real case (mistake 66): in check from Qa1+, the user played Kf2 walking
+    into Qf1#. PGNs omit the eval on the final mating move, so the cp-drop path
+    can't fire — but the mate must still be caught as a failed blunder check.
+    Here nxt carries no eval at all (eval_cp=None, mate_in=None)."""
+    pm_fen = "6k1/5pp1/8/3B3p/2pP4/2NbP1P1/3Q1K1P/q7 b - - 4 32"
+    pos = _pos(ply=63, fen=pm_fen, uci="g1f2", eval_cp=None, mate_in=-1)
+    nxt = _pos(ply=64, fen=pm_fen, uci="a1f1", eval_cp=None, mate_in=None)
+
+    fired, debug = _step4(pos, nxt, user_color="white")
+    assert fired is True
+    assert debug["delivers_mate"] is True
+
+
 # -- Step 2 -----------------------------------------------------------------
 
 # Italian: 1.e4 e5 2.Nf3 Nc6 3.Bc4 Bc5 4.b4 (Evans Gambit), black to move.
