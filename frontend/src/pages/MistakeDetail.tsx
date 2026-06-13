@@ -1,7 +1,13 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { Key } from 'chessground/types'
 import { Chessground, type BoardArrow } from '../components/Chessground'
+import {
+  ExploreBoard,
+  type ExploreHandle,
+  type ExploreState,
+} from '../components/ExploreBoard'
+import { EnginePanel } from '../components/EnginePanel'
 import { ClassificationForm } from '../components/ClassificationForm'
 import {
   useMistake,
@@ -9,6 +15,7 @@ import {
   useUpdateMistake,
   type MistakeUpdatePayload,
 } from '../api/mistakes'
+import { useAnalyzePosition } from '../api/analysis'
 import type { Mistake } from '../api/games'
 
 const STEP_LABELS: Record<number, string> = {
@@ -56,6 +63,21 @@ export function MistakeDetail() {
   })
 
   const update = useUpdateMistake()
+
+  // Explore mode: an interactive analysis board + on-demand engine eval.
+  // These hooks live above the early returns to respect the rules of hooks;
+  // exploreFen is driven by the board's onChange once it mounts.
+  const [mode, setMode] = useState<'review' | 'explore'>('review')
+  const [exploreFen, setExploreFen] = useState<string | null>(null)
+  const exploreRef = useRef<ExploreHandle>(null)
+  const handleExploreChange = useCallback(
+    (s: ExploreState) => setExploreFen(s.fen),
+    [],
+  )
+  const analysisQuery = useAnalyzePosition(exploreFen, {
+    multipv: 3,
+    enabled: mode === 'explore',
+  })
 
   const queue = queueQuery.data?.items ?? []
   const queueIndex = useMemo(
@@ -135,6 +157,14 @@ export function MistakeDetail() {
     arrows.push({ orig: best.from, dest: best.to, brush: 'green' })
   }
 
+  // Explore mode: draw the engine's best move from the position currently on
+  // the board (top line's first move).
+  const engineBestUci = analysisQuery.data?.lines?.[0]?.pv_uci?.[0] ?? null
+  const engineBest = engineBestUci ? parseUci(engineBestUci) : null
+  const engineArrows: BoardArrow[] = engineBest
+    ? [{ orig: engineBest.from, dest: engineBest.to, brush: 'green' }]
+    : []
+
   function handleSave(payload: MistakeUpdatePayload) {
     if (mistakeId === undefined) return
     update.mutate(
@@ -203,34 +233,79 @@ export function MistakeDetail() {
 
       <div className="review-layout">
         <div className="review-board">
-          <Chessground
-            fen={boardFen ?? ''}
-            orientation={game.user_color}
-            arrows={arrows}
-          />
-          <div className="board-meta">
-            <span>
-              <span className="ply-marker">{detail.ply - 1}</span>
-              <span className="faint"> · your move</span>
-              {detail.position_at_move?.san ? (
-                <>
-                  {' '}
-                  <span className="severity-mark severity-blunder">
-                    ←
-                  </span>{' '}
-                  <span className="ply-san">{detail.position_at_move.san}</span>
-                </>
-              ) : null}
-            </span>
-            {best && (
-              <span>
-                <span className="severity-mark severity-inaccuracy">→</span>{' '}
-                <span style={{ color: 'var(--ink-forest)', fontWeight: 600 }}>
-                  {detail.best_move_san ?? bestUci}
-                </span>
-              </span>
-            )}
+          <div className="board-mode-toggle" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'review'}
+              className={mode === 'review' ? 'active' : ''}
+              onClick={() => setMode('review')}
+            >
+              Review
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'explore'}
+              className={mode === 'explore' ? 'active' : ''}
+              onClick={() => setMode('explore')}
+            >
+              Explore
+            </button>
           </div>
+
+          {mode === 'review' ? (
+            <>
+              <Chessground
+                fen={boardFen ?? ''}
+                orientation={game.user_color}
+                arrows={arrows}
+              />
+              <div className="board-meta">
+                <span>
+                  <span className="ply-marker">{detail.ply - 1}</span>
+                  <span className="faint"> · your move</span>
+                  {detail.position_at_move?.san ? (
+                    <>
+                      {' '}
+                      <span className="severity-mark severity-blunder">
+                        ←
+                      </span>{' '}
+                      <span className="ply-san">
+                        {detail.position_at_move.san}
+                      </span>
+                    </>
+                  ) : null}
+                </span>
+                {best && (
+                  <span>
+                    <span className="severity-mark severity-inaccuracy">→</span>{' '}
+                    <span style={{ color: 'var(--ink-forest)', fontWeight: 600 }}>
+                      {detail.best_move_san ?? bestUci}
+                    </span>
+                  </span>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <ExploreBoard
+                ref={exploreRef}
+                startingFen={boardFen ?? ''}
+                orientation={game.user_color}
+                arrows={engineArrows}
+                onChange={handleExploreChange}
+              />
+              <EnginePanel
+                analysis={analysisQuery.data}
+                isFetching={analysisQuery.isFetching}
+                isError={analysisQuery.isError}
+                error={analysisQuery.error}
+                onPlayMove={(uci) => exploreRef.current?.playUci(uci)}
+              />
+            </>
+          )}
+
           {update.isError && (
             <div className="error" style={{ marginTop: 12 }}>
               Save failed: {String(update.error)}
