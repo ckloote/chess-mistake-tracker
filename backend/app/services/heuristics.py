@@ -174,27 +174,41 @@ def _step2(
 
 
 def _step1(
-    prev: Position, m_best_uci: str
+    prev: Position, pos: Position, m_best_uci: str
 ) -> tuple[bool, dict[str, Any]]:
     """MVP approximation: did the engine's best move respond to the piece the
     opponent just moved (capture-the-mover heuristic)? Captures the most common
     "ignored opponent's threat" pattern; will miss subtler defenses. The note
     in DESIGN.md is the canonical caveat — local Stockfish (v1.1) is the cure.
+
+    Guard: do NOT fire when the user's own move also captured the opponent's
+    mover (same destination square). In that case the user addressed the threat
+    and merely recaptured with the wrong piece — a structural inaccuracy
+    (falls through to Step 3), not a missed threat. Without this, every
+    wrong-recapture mis-tagged as "missed opponent threat".
     """
     if not prev.uci:
         return False, {"reason": "no opponent move recorded on prev position"}
     board_before = chess.Board(prev.fen)
     m_best = _parse_uci(m_best_uci)
     m_opp = _parse_uci(prev.uci)
+    m_user = _parse_uci(pos.uci)
     if m_best is None or m_opp is None:
         return False, {"reason": "could not parse m_best or m_opp"}
-    captures_mover = (
+    best_captures_mover = (
         m_best.to_square == m_opp.to_square and board_before.is_capture(m_best)
     )
-    return captures_mover, {
+    user_captures_mover = (
+        m_user is not None
+        and m_user.to_square == m_opp.to_square
+        and board_before.is_capture(m_user)
+    )
+    fired = best_captures_mover and not user_captures_mover
+    return fired, {
         "m_opp_uci": prev.uci,
         "m_best_uci": m_best_uci,
-        "m_best_captures_opp_mover": captures_mover,
+        "m_best_captures_opp_mover": best_captures_mover,
+        "m_user_captures_opp_mover": user_captures_mover,
     }
 
 
@@ -261,8 +275,8 @@ async def assign_heuristic_suggestions(
             if fired:
                 suggested = 2
 
-        if suggested is None and m_best_uci and prev is not None:
-            fired, why = _step1(prev, m_best_uci)
+        if suggested is None and m_best_uci and prev is not None and pos is not None:
+            fired, why = _step1(prev, pos, m_best_uci)
             debug["step1"] = why
             if fired:
                 suggested = 1

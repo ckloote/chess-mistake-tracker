@@ -146,19 +146,38 @@ def test_step2_does_not_fire_when_user_move_was_also_forcing() -> None:
 
 def test_step1_fires_when_best_captures_the_just_moved_piece() -> None:
     # Opponent's move uci ended at c3 (e.g., they moved a piece TO c3).
-    # Best response captures on c3.
+    # Best response captures on c3; the user played something else (a knight
+    # retreat), so they genuinely ignored the mover.
     prev = _pos(ply=5, fen=POS_AFTER_USER_DROPS_QUEEN, uci="d1c3", eval_cp=20)
-    fired, debug = _step1(prev, m_best_uci="d8c3")
+    pos = _pos(ply=6, fen=POS_AFTER_USER_DROPS_QUEEN, uci="f6g8", eval_cp=10)
+    fired, debug = _step1(prev, pos, m_best_uci="d8c3")
     assert fired is True
     assert debug["m_best_captures_opp_mover"] is True
+    assert debug["m_user_captures_opp_mover"] is False
 
 
 def test_step1_does_not_fire_when_best_is_unrelated_move() -> None:
     prev = _pos(ply=5, fen=POS_AFTER_USER_DROPS_QUEEN, uci="d1c3", eval_cp=20)
+    pos = _pos(ply=6, fen=POS_AFTER_USER_DROPS_QUEEN, uci="f6g8", eval_cp=10)
     # Best moves a knight, ignoring the c3 piece.
-    fired, debug = _step1(prev, m_best_uci="b8c6")
+    fired, debug = _step1(prev, pos, m_best_uci="b8c6")
     assert fired is False
     assert debug["m_best_captures_opp_mover"] is False
+
+
+def test_step1_does_not_fire_when_user_also_captured_the_mover() -> None:
+    """The wrong-recapture case (real-world false positive): the engine's best
+    move captures the mover, but the user ALSO captured on that square — just
+    with a different piece. That's a structural inaccuracy, not a missed threat,
+    so Step 1 must stay quiet and let it fall through to Step 3."""
+    prev = _pos(ply=5, fen=POS_AFTER_USER_DROPS_QUEEN, uci="d1c3", eval_cp=20)
+    # User's move also lands on c3 (a capture of the same piece). Only the
+    # to-square + target occupancy matter to the capture-the-mover check.
+    pos = _pos(ply=6, fen=POS_AFTER_USER_DROPS_QUEEN, uci="d4c3", eval_cp=10)
+    fired, debug = _step1(prev, pos, m_best_uci="d8c3")
+    assert fired is False
+    assert debug["m_best_captures_opp_mover"] is True
+    assert debug["m_user_captures_opp_mover"] is True
 
 
 # -- Cloud cache helper -----------------------------------------------------
