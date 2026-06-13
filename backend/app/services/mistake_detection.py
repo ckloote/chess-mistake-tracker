@@ -39,15 +39,24 @@ class _Thresholds:
 
 
 def _is_suppressed(
-    winrate_before: float, winrate_after: float, t: _Thresholds
+    winrate_before: float, winrate_after: float, severity: str, t: _Thresholds
 ) -> bool:
     """Apply DESIGN.md's two suppression rules:
     - already losing (both sides below threshold): not "giving away an advantage"
     - still winning despite imprecision (both sides comfortably ahead)
+
+    The "still winning" rule is intentionally limited to `inaccuracy`-severity
+    slips: a mistake or blunder is instructive even when you stay ahead (you
+    gave back real, learnable advantage), whereas a minor imprecision while
+    comfortably winning is the noise the user doesn't want in the queue.
     """
     if winrate_before < t.suppress_below and winrate_after < t.suppress_below:
         return True
-    if winrate_before > t.suppress_above_before and winrate_after > t.suppress_above_after:
+    if (
+        severity == "inaccuracy"
+        and winrate_before > t.suppress_above_before
+        and winrate_after > t.suppress_above_after
+    ):
         return True
     return False
 
@@ -141,7 +150,7 @@ def detect_mistakes(session: Session, game: Game) -> list[Mistake]:
         severity = winrate.severity_for_drop(drop, t.inaccuracy, t.mistake, t.blunder)
         if severity is None:
             continue
-        if _is_suppressed(wr_before, wr_after, t):
+        if _is_suppressed(wr_before, wr_after, severity, t):
             continue
 
         board_before = chess.Board(prev.fen)

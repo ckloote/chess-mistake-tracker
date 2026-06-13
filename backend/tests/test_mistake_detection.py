@@ -8,6 +8,36 @@ from backend.app.analyzers.base import EvalResult
 from backend.app.db import Base
 from backend.app.models import Game, Mistake, User
 from backend.app.services.analysis import analyze_game
+from backend.app.services.mistake_detection import _is_suppressed, _Thresholds
+
+
+_T = _Thresholds(
+    inaccuracy=5.0,
+    mistake=10.0,
+    blunder=20.0,
+    suppress_below=30.0,
+    suppress_above_before=75.0,
+    suppress_above_after=68.0,
+)
+
+
+def test_still_winning_suppresses_inaccuracy_only() -> None:
+    # Comfortably ahead, stayed ahead. An inaccuracy here is noise → suppress.
+    assert _is_suppressed(83.0, 72.0, "inaccuracy", _T) is True
+    # A mistake or blunder in the same band gave back real advantage → keep.
+    assert _is_suppressed(83.0, 72.0, "mistake", _T) is False
+    assert _is_suppressed(95.0, 74.0, "blunder", _T) is False
+
+
+def test_already_losing_suppresses_regardless_of_severity() -> None:
+    # Both sides below suppress_below: not "giving away" anything you had.
+    assert _is_suppressed(10.0, 3.0, "blunder", _T) is True
+    assert _is_suppressed(10.0, 3.0, "inaccuracy", _T) is True
+
+
+def test_contested_position_is_never_suppressed() -> None:
+    # 55% -> 45% is a real, learnable slip even if only an inaccuracy.
+    assert _is_suppressed(55.0, 45.0, "inaccuracy", _T) is False
 
 
 class _NoOpCloud:
