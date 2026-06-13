@@ -110,6 +110,14 @@ class StockfishLocalAnalyzer:
                 board,
                 self._limit(),
                 multipv=multipv if multipv > 1 else None,
+                # Pass the FEN as the "game" id so python-chess sends ucinewgame
+                # (clearing the transposition table) before each position. This
+                # makes the result a pure function of (position, depth, multipv),
+                # independent of how many positions this shared process analyzed
+                # before — so the batch best-move pass agrees with the
+                # fresh-process interactive endpoint instead of drifting on
+                # near-tied positions where a warm hash tips the ranking.
+                game=fen,
             )
         except (chess.engine.EngineError, asyncio.CancelledError) as e:
             log.warning("stockfish analyse failed for fen=%r: %s", fen, e)
