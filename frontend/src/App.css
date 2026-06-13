@@ -609,6 +609,58 @@ table.games-table tbody tr:hover {
   opacity: 0.6;
 }
 
+.explore-controls .explore-reset {
+  margin-left: auto;
+}
+
+/* ---- Explored-line move list ------------------------------------- */
+
+.explore-moves {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 4px;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.6;
+  padding: 8px 0 0;
+  border-top: var(--rule-soft);
+}
+
+.move-token {
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 1px 5px;
+  border-radius: var(--radius);
+  color: var(--paper-ink);
+  font: inherit;
+}
+
+.move-token:hover {
+  background: var(--paper-deep);
+}
+
+.move-token.current {
+  background: var(--paper-ink);
+  color: var(--paper-cream);
+}
+
+.move-token.move-start {
+  color: var(--ink-muted);
+}
+
+.move-no {
+  color: var(--ink-faint);
+  margin-right: 3px;
+}
+
+.move-token.current .move-no {
+  color: var(--paper-rule);
+}
+
 /* ---- Engine output panel ----------------------------------------- */
 
 .engine-panel {
