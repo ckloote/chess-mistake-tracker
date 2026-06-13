@@ -382,16 +382,16 @@ class _StubLocalAnalyzer:
         raise NotImplementedError
 
 
-async def test_local_fills_in_when_cloud_returns_nothing(db: Session) -> None:
-    """The whole point of Stockfish-local: when cloud has no entry for a
-    position, the local analyzer answers and the best move still lands on
-    the Mistake row."""
+async def test_local_is_source_of_truth_when_present(db: Session) -> None:
+    """Local-first: a configured Stockfish is the source of truth, so cloud is
+    not consulted when local answers. This keeps the persisted best move in
+    agreement with the (local) Explore board."""
     game, mistake, _ = _seed_game_with_step4_mistake(db)
-    cloud = _StubCloudAnalyzer({})  # cloud knows nothing
+    cloud = _StubCloudAnalyzer({
+        PREV_FEN_USER_TO_MOVE: [EvalResult(cp=10, mate=None, pv=["e2d3"])],
+    })
     local = _StubLocalAnalyzer({
-        PREV_FEN_USER_TO_MOVE: [
-            EvalResult(cp=15, mate=None, pv=["e2a6"]),
-        ],
+        PREV_FEN_USER_TO_MOVE: [EvalResult(cp=15, mate=None, pv=["e2a6"])],
     })
 
     await assign_heuristic_suggestions(
@@ -400,22 +400,20 @@ async def test_local_fills_in_when_cloud_returns_nothing(db: Session) -> None:
     db.commit()
     db.refresh(mistake)
 
-    assert cloud.calls == [PREV_FEN_USER_TO_MOVE]  # cloud was asked first
-    assert local.calls == [PREV_FEN_USER_TO_MOVE]  # local was the fallback
-    assert mistake.best_move_uci == "e2a6"
+    assert local.calls == [PREV_FEN_USER_TO_MOVE]  # local asked first
+    assert cloud.calls == []  # cloud not consulted — local answered
+    assert mistake.best_move_uci == "e2a6"  # local's move, not cloud's e2d3
     assert mistake.best_move_san == "Qa6"
 
 
-async def test_local_not_consulted_when_cloud_has_an_answer(db: Session) -> None:
-    """Cascade short-circuits: a cloud hit means no local call, which keeps
-    the analyze-pending run fast on positions that ARE in cloud-eval."""
+async def test_cloud_fallback_when_local_returns_nothing(db: Session) -> None:
+    """If local somehow has no line for a position, cloud-eval still fills in
+    so coverage isn't lost."""
     game, mistake, _ = _seed_game_with_step4_mistake(db)
     cloud = _StubCloudAnalyzer({
         PREV_FEN_USER_TO_MOVE: [EvalResult(cp=10, mate=None, pv=["e2a6"])],
     })
-    local = _StubLocalAnalyzer({
-        PREV_FEN_USER_TO_MOVE: [EvalResult(cp=99, mate=None, pv=["e2d3"])],
-    })
+    local = _StubLocalAnalyzer({})  # local knows nothing
 
     await assign_heuristic_suggestions(
         db, game, [mistake], cloud_analyzer=cloud, local_analyzer=local,
@@ -423,8 +421,8 @@ async def test_local_not_consulted_when_cloud_has_an_answer(db: Session) -> None
     db.commit()
     db.refresh(mistake)
 
-    assert cloud.calls == [PREV_FEN_USER_TO_MOVE]
-    assert local.calls == []  # never consulted
+    assert local.calls == [PREV_FEN_USER_TO_MOVE]  # local asked first
+    assert cloud.calls == [PREV_FEN_USER_TO_MOVE]  # then cloud as fallback
     assert mistake.best_move_uci == "e2a6"
 
 

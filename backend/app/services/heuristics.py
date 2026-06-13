@@ -3,10 +3,12 @@
 Implements the priority-ordered detector from DESIGN.md §"Layer A Heuristic
 Suggestion": 4 → 2 → 1 → 3. Step 4 is local (uses surrounding Position rows
 already in the DB). Steps 2 and 1 need the engine's preferred move from the
-position before the user moved, so we ask the Lichess cloud-eval endpoint.
-Cloud misses are silent — we fall through to Step 3.
+position before the user moved. We resolve that move local-first: a configured
+Stockfish answers when present (the same engine the Explore board uses), with
+Lichess cloud-eval as the fallback. Misses are silent — we fall through to
+Step 3.
 
-The cloud-eval fetch is unconditional per mistake (not gated on Step 4): the
+The best-move fetch is unconditional per mistake (not gated on Step 4): the
 engine's preferred move is independently useful for the review UI's "best
 move" arrow, and the result is persisted to Mistake.best_move_uci /
 best_move_san so the frontend can render it without re-parsing
@@ -31,6 +33,13 @@ CONFIDENCE = {4: 0.8, 2: 0.7, 1: 0.6, 3: 0.5}
 # Eval-swing threshold (in centipawns, user-view) for Step 4: opponent's reply
 # must make the position at least this much worse for the user than it already was.
 STEP4_CP_DROP = 200
+
+# MultiPV used when resolving the engine's best move. This MUST match the value
+# the interactive Explore board requests (frontend useAnalyzePosition, multipv:3)
+# so the persisted "best move" (review-mode arrow) equals Explore's top line.
+# Stockfish can rank moves differently across MultiPV settings at a fixed depth,
+# so a mismatch here resurfaces the review-vs-explore inconsistency.
+BEST_MOVE_MULTIPV = 3
 
 
 def _user_view_cp(eval_cp: int | None, mate_in: int | None, user_color: str) -> int | None:
@@ -77,17 +86,29 @@ async def _get_best_move(
     cloud: LichessCloudEvalAnalyzer,
     local: Analyzer | None = None,
 ) -> str | None:
-    """Resolve the engine's preferred move for a FEN. Cloud-eval is consulted
-    first (cheap, async, covers popular positions); when it returns nothing
-    AND a local analyzer is available, we fall back to it for full coverage.
-    Per-fen results are cached so revisited positions in the same run are free.
+    """Resolve the engine's preferred move for a FEN.
+
+    Local-first: when a local Stockfish analyzer is available it's the source of
+    truth. It's higher quality than cloud-eval and, crucially, it's the same
+    engine the interactive Explore board uses — so the persisted best move (the
+    review-mode green arrow) agrees with what the user sees while exploring,
+    rather than disagreeing because two different engines were consulted.
+
+    Cloud-eval is the fallback: used when no local engine is configured, and as
+    a last resort if local somehow returns nothing. Per-fen results are cached
+    so revisited positions in the same run are free.
     """
     if fen in cache:
         results = cache[fen]
     else:
-        results = await cloud.analyze_position(fen)
-        if (not results or not results[0].pv) and local is not None:
-            results = await local.analyze_position(fen)
+        # multipv must match the Explore board so the best move (results[0])
+        # is the same line the user sees there.
+        if local is not None:
+            results = await local.analyze_position(fen, multipv=BEST_MOVE_MULTIPV)
+            if not results or not results[0].pv:
+                results = await cloud.analyze_position(fen, multipv=BEST_MOVE_MULTIPV)
+        else:
+            results = await cloud.analyze_position(fen, multipv=BEST_MOVE_MULTIPV)
         cache[fen] = results
     if not results or not results[0].pv:
         return None
