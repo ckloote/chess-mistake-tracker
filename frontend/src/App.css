@@ -1802,3 +1802,197 @@ table.games-table tbody tr:hover {
     margin-right: 0;
   }
 }
+
+/* ==== Dashboard ==================================================== */
+
+.dash-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 36px;
+}
+
+.stat-card {
+  border: var(--rule);
+  border-radius: var(--radius-card);
+  background: var(--paper-cream);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 104px;
+  justify-content: center;
+}
+
+.stat-card-num {
+  font-family: var(--font-display);
+  font-size: var(--step-5);
+  font-variation-settings: 'opsz' 144, 'SOFT' 0, 'WONK' 0;
+  font-weight: 380;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--paper-ink);
+}
+
+.stat-card-label {
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.stat-card-sub {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--ink-faint);
+}
+
+.stat-severity {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+}
+
+.sev-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.sev-glyph {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: var(--step-1);
+}
+
+.sev-num {
+  font-family: var(--font-display);
+  font-size: var(--step-3);
+  font-weight: 380;
+  color: var(--paper-ink);
+}
+
+.dash-section {
+  margin-bottom: 36px;
+}
+
+.dash-section h2 {
+  font-family: var(--font-display);
+  font-size: var(--step-2);
+  font-weight: 420;
+  letter-spacing: -0.01em;
+  margin: 0 0 4px;
+  color: var(--paper-ink);
+}
+
+.dash-section-note {
+  font-family: var(--font-body);
+  font-size: var(--step--1);
+  color: var(--ink-muted);
+  margin: 0 0 16px;
+}
+
+/* Training prescription */
+.rx-top {
+  border: var(--rule);
+  border-left: 3px solid var(--ink-port);
+  border-radius: var(--radius-card);
+  background: var(--tint-port);
+  padding: 18px 22px;
+}
+
+.rx-top-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--font-body);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: 8px;
+}
+
+.rx-pattern {
+  font-family: var(--font-display);
+  font-size: var(--step-3);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--paper-ink);
+}
+
+.rx-pattern .rx-sep {
+  color: var(--ink-faint);
+}
+
+.rx-pattern .rx-aware {
+  color: var(--ink-port);
+}
+
+.rx-pattern .rx-count {
+  font-family: var(--font-mono);
+  font-size: var(--step-0);
+  color: var(--ink-muted);
+}
+
+.rx-suggestion {
+  font-family: var(--font-body);
+  font-size: var(--step-0);
+  line-height: 1.5;
+  color: var(--paper-ink);
+  margin: 10px 0 0;
+  max-width: 62ch;
+}
+
+.rx-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+}
+
+.rx-item {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 8px 2px;
+  border-bottom: var(--rule-soft);
+}
+
+.rx-item-rank {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--ink-faint);
+  min-width: 2.2em;
+}
+
+.rx-item-pattern {
+  font-family: var(--font-body);
+  font-size: var(--step-0);
+  color: var(--paper-ink);
+  flex: 1;
+}
+
+.rx-item-share {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-muted);
+}
+
+/* Charts */
+.chart-wrap {
+  width: 100%;
+  height: 220px;
+}
+
+.dash-more {
+  font-family: var(--font-body);
+  font-size: var(--step--1);
+}
+
+@media (max-width: 720px) {
+  .dash-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
