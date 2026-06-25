@@ -6,15 +6,18 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 
+import chess
 import pytest
 from sqlalchemy.orm import Session
 
 from backend.app.analyzers.base import EvalResult
 from backend.app.models import Game, Mistake, Position, User
 from backend.app.services.heuristics import (
+    STEP2_THREAT_SEE,
     STEP4_CP_DROP,
     _step1,
     _step2,
+    _step2_threat,
     _step4,
     _user_view_cp,
     _uci_to_san,
@@ -473,3 +476,155 @@ async def test_no_local_no_problem_when_cloud_empty(db: Session) -> None:
     assert mistake.best_move_uci is None
     # Step 4 still fires from local data, independent of cloud presence.
     assert mistake.suggested_step == 4
+
+
+# -- Step 2 material-threat probe (_step2_threat) -------------------------
+
+# White (Nc3, Ke1) to move; black has an undefended bishop on d5. The quiet best
+# move Kd1 isn't a capture or check, so plain _step2 can't see it — but after it,
+# if Black does nothing, White wins the bishop with Nxd5.
+THREAT_BEFORE = "4k3/8/8/3b4/8/2N5/8/4K3 w - - 0 1"
+# Same, but the d5 piece is a knight defended by an e6 pawn: Nxd5 is an even
+# trade (SEE 0), so there's no real material threat.
+TRADE_BEFORE = "4k3/8/4p3/3n4/8/2N5/8/4K3 w - - 0 1"
+
+
+def _prev(fen: str, uci: str = "e8e7") -> Position:
+    """A bare prev Position (only .fen / .uci are read by _step2_threat)."""
+    return Position(ply=2, fen=fen, uci=uci, san=None, is_user_move=False)
+
+
+def _probe_fen(before_fen: str, best_uci: str) -> str:
+    """The FEN _step2_threat will probe: best move played, opponent passes."""
+    board = chess.Board(before_fen)
+    board.push(chess.Move.from_uci(best_uci))
+    board.push(chess.Move.null())
+    return board.fen()
+
+
+async def test_step2_threat_fires_on_quiet_move_that_wins_material() -> None:
+    probe = _probe_fen(THREAT_BEFORE, "e1d1")
+    local = _StubLocalAnalyzer({
+        probe: [EvalResult(cp=350, mate=None, pv=["c3d5"])],  # threatens Nxd5
+    })
+    fired, why = await _step2_threat(
+        _prev(THREAT_BEFORE), "e1d1", 60.0, "white", local,
+    )
+    assert fired is True
+    assert why["probe_see"] == 330  # a clean bishop
+    assert local.calls == [probe]
+
+
+async def test_step2_threat_fires_on_mate_threat() -> None:
+    probe = _probe_fen(THREAT_BEFORE, "e1d1")
+    local = _StubLocalAnalyzer({
+        probe: [EvalResult(cp=None, mate=1, pv=["c3d5"])],  # user mates next
+    })
+    fired, why = await _step2_threat(
+        _prev(THREAT_BEFORE), "e1d1", 60.0, "white", local,
+    )
+    assert fired is True
+    assert why["probe_mate_for_user"] is True
+
+
+async def test_step2_threat_silent_on_even_trade() -> None:
+    probe = _probe_fen(TRADE_BEFORE, "e1d1")
+    local = _StubLocalAnalyzer({
+        probe: [EvalResult(cp=20, mate=None, pv=["c3d5"])],  # Nxd5, exd5 — SEE 0
+    })
+    fired, why = await _step2_threat(
+        _prev(TRADE_BEFORE), "e1d1", 60.0, "white", local,
+    )
+    assert fired is False
+    assert why["probe_see"] == 0
+
+
+async def test_step2_threat_skips_when_best_move_is_a_capture() -> None:
+    # A capture best move is plain _step2's job; the probe bails without an
+    # engine call so the two paths can't double-count.
+    local = _StubLocalAnalyzer({})
+    fired, why = await _step2_threat(
+        _prev(THREAT_BEFORE), "c3d5", 60.0, "white", local,
+    )
+    assert fired is False
+    assert "forcing" in why["reason"]
+    assert local.calls == []
+
+
+async def test_step2_threat_requires_local_engine() -> None:
+    fired, why = await _step2_threat(
+        _prev(THREAT_BEFORE), "e1d1", 60.0, "white", None,
+    )
+    assert fired is False
+    assert "no local engine" in why["reason"]
+
+
+async def test_step2_threat_gated_on_winrate_before() -> None:
+    # Skipping a shot only counts as a missed opportunity when you were at least
+    # equal; below 50 the probe never runs.
+    local = _StubLocalAnalyzer({})
+    fired, why = await _step2_threat(
+        _prev(THREAT_BEFORE), "e1d1", 40.0, "white", local,
+    )
+    assert fired is False
+    assert local.calls == []
+    assert STEP2_THREAT_SEE == 200  # the documented threshold
+
+
+async def test_step2_threat_assigned_through_cascade(db: Session) -> None:
+    """End-to-end: a quiet material-threat mistake is suggested Step 2 by the
+    cascade (not the Step-3 default), with the probe recorded in debug."""
+    user = User(lichess_username="phaedrus")
+    db.add(user)
+    db.commit()
+    game = Game(
+        user_id=user.id,
+        source="lichess_online",
+        source_game_id="g0000002",
+        user_color="white",
+        white="phaedrus",
+        black="alice",
+        result="1-0",
+        time_control="300+0",
+        played_at=datetime(2026, 5, 2, tzinfo=timezone.utc),
+        pgn="[Event \"Test\"]\n\n1. e4 *\n",
+        has_evals=True,
+    )
+    db.add(game)
+    db.commit()
+
+    after_user = chess.Board(THREAT_BEFORE)
+    after_user.push(chess.Move.from_uci("e1f1"))  # user's quiet, lesser move
+    db.add_all([
+        Position(game_id=game.id, ply=2, fen=THREAT_BEFORE, san="Ke7",
+                 uci="e8e7", is_user_move=False),
+        Position(game_id=game.id, ply=3, fen=after_user.fen(), san="Kf1",
+                 uci="e1f1", is_user_move=True),
+    ])  # no ply-4 row → Step 4 has no opponent reply to fire on
+    db.commit()
+
+    mistake = Mistake(
+        game_id=game.id, ply=3, severity="mistake",
+        eval_before_cp=300, eval_after_cp=40,
+        winrate_before=62.0, winrate_after=51.0, winrate_drop=11.0,
+        time_pressure_flag=False, transition_flag=False, endgame_flag=False,
+    )
+    db.add(mistake)
+    db.commit()
+
+    probe = _probe_fen(THREAT_BEFORE, "e1d1")
+    cloud = _StubCloudAnalyzer({})
+    local = _StubLocalAnalyzer({
+        THREAT_BEFORE: [EvalResult(cp=300, mate=None, pv=["e1d1", "e8d8"])],
+        probe: [EvalResult(cp=350, mate=None, pv=["c3d5"])],
+    })
+
+    await assign_heuristic_suggestions(
+        db, game, [mistake], cloud_analyzer=cloud, local_analyzer=local,
+    )
+    db.commit()
+    db.refresh(mistake)
+
+    assert mistake.suggested_step == 2
+    assert mistake.best_move_uci == "e1d1"
+    assert mistake.suggestion_debug["step2_threat"]["probe_see"] == 330

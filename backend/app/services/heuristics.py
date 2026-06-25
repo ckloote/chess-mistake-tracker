@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.analyzers.base import Analyzer, EvalResult
 from backend.app.analyzers.lichess_cloud import LichessCloudEvalAnalyzer
+from backend.app.chess_utils.see import static_exchange_eval
 from backend.app.chess_utils.winrate import MATE_CP_EQUIVALENT
 from backend.app.models import Game, Mistake, Position
 
@@ -33,6 +34,11 @@ CONFIDENCE = {4: 0.8, 2: 0.7, 1: 0.6, 3: 0.5}
 # Eval-swing threshold (in centipawns, user-view) for Step 4: opponent's reply
 # must make the position at least this much worse for the user than it already was.
 STEP4_CP_DROP = 200
+
+# Minimum SEE (centipawns) for the Step-2 material-threat probe to count a
+# threatened capture as "wins material" — roughly a minor piece. Below this a
+# capture is a routine trade, not a forcing threat. See `_step2_threat`.
+STEP2_THREAT_SEE = 200
 
 # MultiPV used when resolving the engine's best move. This MUST match the value
 # the interactive Explore board requests (frontend useAnalyzePosition, multipv:3)
@@ -186,6 +192,88 @@ def _step2(
     }
 
 
+async def _step2_threat(
+    prev: Position,
+    m_best_uci: str,
+    winrate_before: float,
+    user_color: str,
+    local: Analyzer | None,
+) -> tuple[bool, dict[str, Any]]:
+    """Catch the Step-2 case `_step2` misses: a *quiet* best move (neither a
+    capture nor a check) that creates an immediate material or mate threat —
+    e.g. a pawn push that traps a piece, or a quiet move that sets up an
+    unstoppable fork.
+
+    DESIGN.md's Step 2 rule includes "creates an immediate mate/material threat"
+    but the MVP only detected check-or-capture. Empirically that left ~24 of the
+    user's hand-labelled Step-2 mistakes mis-suggested as Step 3 (their best move
+    was quiet), so this closes the gap.
+
+    Mechanism — a null-move threat probe (requires the local engine; cloud-eval
+    can't evaluate arbitrary probe positions):
+      1. Play `M_best`. Now it's the opponent's move.
+      2. Let the opponent *pass* (a null move). Now the user is on move again.
+      3. Ask the engine for the user's best reply `M_threat` in that position.
+      4. Fire Step 2 if the user now threatens mate, or `M_threat` is a capture
+         that wins material (SEE >= STEP2_THREAT_SEE). The "if the opponent did
+         nothing" framing is what makes the threat *immediate*; SEE confirms it
+         is real material and not a routine trade.
+
+    Gate `winrate_before >= 50` matches `_step2`: a forcing shot you skip only
+    counts as a missed opportunity when you were at least equal to begin with.
+    """
+    if local is None:
+        return False, {"reason": "no local engine for threat probe"}
+    if winrate_before < 50.0:
+        return False, {"reason": "winrate_before < 50", "winrate_before": winrate_before}
+
+    board_before = chess.Board(prev.fen)
+    m_best = _parse_uci(m_best_uci)
+    if m_best is None or m_best not in board_before.legal_moves:
+        return False, {"reason": "m_best missing or illegal"}
+    # Capture/check best moves are already handled by `_step2`; this probe only
+    # exists for the quiet ones.
+    if board_before.is_capture(m_best) or board_before.gives_check(m_best):
+        return False, {"reason": "m_best is forcing; handled by _step2"}
+
+    board_after_best = board_before.copy(stack=False)
+    board_after_best.push(m_best)
+    if board_after_best.is_game_over():
+        return False, {"reason": "terminal after m_best"}
+
+    probe = board_after_best.copy(stack=False)
+    probe.push(chess.Move.null())  # opponent passes; user to move
+    results = await local.analyze_position(probe.fen(), multipv=1)
+    if not results or not results[0].pv:
+        return False, {"reason": "probe returned no line"}
+
+    top = results[0]
+    m_threat = _parse_uci(top.pv[0])
+    user_white = user_color == "white"
+    # Probe eval is white-POV; a mate sign matching the user's color means the
+    # user (on move in the probe) is the one delivering it.
+    mate_for_user = top.mate is not None and (top.mate > 0) == user_white
+
+    see_value: int | None = None
+    if (
+        m_threat is not None
+        and m_threat in probe.legal_moves
+        and probe.is_capture(m_threat)
+    ):
+        see_value = static_exchange_eval(probe, m_threat)
+
+    fired = mate_for_user or (see_value is not None and see_value >= STEP2_THREAT_SEE)
+    return fired, {
+        "m_best_uci": m_best_uci,
+        "m_best_quiet": True,
+        "probe_best_uci": top.pv[0],
+        "probe_see": see_value,
+        "probe_mate_for_user": mate_for_user,
+        "see_threshold": STEP2_THREAT_SEE,
+        "winrate_before": winrate_before,
+    }
+
+
 def _step1(
     prev: Position, pos: Position, m_best_uci: str
 ) -> tuple[bool, dict[str, Any]]:
@@ -285,6 +373,20 @@ async def assign_heuristic_suggestions(
         if suggested is None and m_best_uci and prev is not None and pos is not None:
             fired, why = _step2(prev, pos, m_best_uci, mistake.winrate_before)
             debug["step2"] = why
+            if fired:
+                suggested = 2
+
+        # Step 2 (extended): quiet best move that creates a material/mate threat.
+        # Needs the local engine for a null-move probe; silently skipped without.
+        if suggested is None and m_best_uci and prev is not None:
+            fired, why = await _step2_threat(
+                prev,
+                m_best_uci,
+                mistake.winrate_before,
+                game.user_color,
+                local_analyzer,
+            )
+            debug["step2_threat"] = why
             if fired:
                 suggested = 2
 

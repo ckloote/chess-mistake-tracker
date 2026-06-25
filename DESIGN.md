@@ -174,10 +174,10 @@ For each user move (ply where `is_user_move` is true):
    - `winrate_drop ≥ 10` → mistake
    - `winrate_drop ≥ 5` → inaccuracy
    - else → not a mistake
-4. Suppress if `winrate_before < 30` and `winrate_after < 30` (already losing; not "giving away an advantage" — out of scope for the user's stated focus). Make this configurable.
-5. Suppress if `winrate_before > 90` and `winrate_after > 80` (still very much winning despite imprecision). Configurable.
+4. Suppress if `winrate_before < suppress_below` and `winrate_after < suppress_below` (already losing; not "giving away an advantage" — out of scope for the user's stated focus). Applies to **any** severity. Default `suppress_below = 30`.
+5. Suppress if `winrate_before > suppress_above_before` and `winrate_after > suppress_above_after` (still comfortably winning despite imprecision) — but **only for `inaccuracy`-severity** slips. Defaults `90 / 80`. A *mistake* or *blunder* while still winning is kept: you gave back real, learnable advantage even if you stayed ahead, whereas a minor imprecision in a won position is exactly the noise the user doesn't want. Limiting the rule to inaccuracies was a deliberate refinement after the all-severity version was suppressing instructive blunders-in-winning-positions.
 
-The 30/90 suppression rules implement the user's actual concern ("I make mistakes that *cost* me the advantage") rather than logging every imperfect move. Both thresholds are tunable from a settings page.
+These suppression rules implement the user's actual concern ("I make mistakes that *cost* me the advantage") rather than logging every imperfect move. All three thresholds live in `AppSettings` and are tunable from the settings page (this instance currently runs `75 / 68` for the still-winning bounds, tightened to trim winning-position inaccuracies from the queue).
 
 ### Time-pressure flag
 
@@ -192,17 +192,30 @@ These thresholds are configurable.
 
 For each detected mistake, suggest one of Steps 1–4 plus a confidence score. The user can accept or override. The heuristic reads: position before user's move (`P_before`), opponent's previous move (`M_opp`), engine's best move from `P_before` (`M_best`), user's actual move (`M_user`), position after user's move (`P_after`), and engine's best response from `P_after` (`M_opp_response`).
 
+`M_best` is resolved **local-first**: a configured local Stockfish is the source of truth, with Lichess cloud-eval as fallback (see Analyzer abstractions). This matters for consistency — the same `M_best` is persisted on the `Mistake` row and drawn as the review-mode "best move" arrow, and it's the same engine the interactive Explore board calls, so the two never disagree. To make `M_best` a pure function of `(position, depth, multipv)` rather than drifting with a warm transposition table, every per-position analysis sends `ucinewgame` (python-chess `game=` argument), and the heuristic requests the same MultiPV the Explore board does (`BEST_MOVE_MULTIPV`).
+
 ### Step 4 — failed blunder check (highest priority)
 
 Triggers: `M_user` looked locally reasonable but `M_opp_response` is forcing (check or capture) AND wins material or causes a large eval swing.
 
-Rule: if `M_opp_response` from `P_after` is a check or a capture, AND the eval after `M_opp_response` is ≥ 200cp worse for the user than the eval after `M_user`, suggest **Step 4** with confidence ≈ 0.8.
+Rule: if `M_opp_response` from `P_after` is a check or a capture, AND the eval after `M_opp_response` is ≥ 200cp worse for the user than the eval after `M_user`, suggest **Step 4** with confidence ≈ 0.8. As implemented, `M_opp_response` is the *actual* opponent reply stored on the next position (not a fresh engine lookup) — this fires when the opponent capitalized on the mistake, which is itself the useful "you got punished here" signal, and saves a call. One special case: if that reply delivers **checkmate**, fire directly from the board rather than via the eval-drop test — PGNs routinely omit the eval on the mating move, which would otherwise leave the cp drop null and wrongly fall through to Step 3.
 
 ### Step 2 — missed forcing move
 
-Triggers: a forcing move was available in `P_before` that the user didn't play.
+Triggers: a forcing move was available in `P_before` that the user didn't play. "Forcing" here means a check, a capture, **or** a quiet move that creates an immediate material/mate threat. All three are detected; `winrate_before ≥ 50` gates all of them (skipping a shot only counts as a missed opportunity when you were at least equal to begin with). Confidence ≈ 0.7.
 
-Rule: if `M_best` from `P_before` is a check, capture, or creates an immediate mate/material threat, AND `M_user` was non-forcing, AND `winrate_before` was already ≥ 50, suggest **Step 2** with confidence ≈ 0.7. Detecting "creates a mate threat" is harder; for MVP it's sufficient to detect check-or-capture and tag this as Step 2.
+**Path A — `M_best` is itself a check or capture** (`_step2`). Fire if `M_best` is forcing AND `M_user` was non-forcing. This is the cheap, local check (`board.is_capture` / `board.gives_check`); no extra engine call.
+
+**Path B — `M_best` is quiet but threatens material/mate** (`_step2_threat`). This is the case Path A structurally cannot see (e.g. a pawn push that traps a piece, or a quiet move setting up an unstoppable fork). The original MVP deferred it; in practice it accounted for the large majority of the Step-2 mistakes the heuristic was mislabelling as Step 3, so it's now implemented as a **null-move threat probe** (requires the local engine — cloud-eval can't evaluate arbitrary probe positions):
+
+1. Play `M_best`. It is now the opponent's move.
+2. Let the opponent **pass** — push a null move. The user is on move again. The "if the opponent did nothing" framing is what isolates the *immediate* threat created by `M_best`.
+3. Ask the engine for the user's best reply `M_threat` in that position.
+4. Fire Step 2 if the user now threatens **mate**, or `M_threat` is a **capture that wins material** — judged by Static Exchange Evaluation, `SEE(M_threat) ≥ 200cp` (≈ a minor piece). SEE distinguishes a real material win from a routine even trade; eval-after-pass alone can't, because every position looks better when the opponent skips a move. See `chess_utils/see.py` for the SEE swap algorithm and its caveats (pins/legality ignored; x-rays handled).
+
+Path B is gated to *quiet* `M_best` only (capture/check best moves are Path A's job), so the two can't double-count. The probe's full result — `M_threat`, its SEE, whether it's a mate threat — is recorded in `suggestion_debug.step2_threat`.
+
+> Tuning: the SEE≥200-or-mate rule is deliberately conservative (favours precision). It recovers ~75% of the quiet-best Step-2 cases at a small over-fire rate on genuinely tactical positions the user happened to label Step 3. Widening to also count forcing *checks* and an engine-eval signal was considered and deferred — the suggestion is only a starting point the user can override, so a missed suggestion is cheaper than a confidently-wrong one.
 
 ### Step 1 — missed opponent's threat
 
@@ -211,6 +224,8 @@ Triggers: opponent's previous move created a threat the user failed to address.
 Rule: if `M_best` from `P_before` defends a piece that becomes attackable, blocks a check, evades a fork, or otherwise responds to a tactical motif introduced by `M_opp`, suggest **Step 1**. Detecting "responds to a threat introduced by opponent" reliably is the hardest of the four. MVP implementation:
 - After `M_opp`, run engine for 1 ply: does opponent have a tactical follow-up (check, winning capture, mating attack) if user passes (i.e., make a null move and see if opponent's eval jumps)?
 - If yes, AND `M_best` from `P_before` neutralizes that follow-up, AND `M_user` doesn't, suggest **Step 1** with confidence ≈ 0.6.
+
+As implemented, the MVP approximation is "does `M_best` capture the piece the opponent just moved (`M_best.to == M_opp.to`)?" — the recapture-the-mover motif. Guard: it does **not** fire when `M_user` *also* captured that same square. In that case the user did address the threat and merely recaptured with the wrong piece — a structural inaccuracy (Step 3), not a missed threat. Without the guard, every wrong-recapture mislabelled as Step 1.
 
 ### Step 3 — strategic inaccuracy (default)
 
@@ -274,9 +289,9 @@ class Analyzer(Protocol):
 - `LichessPgnEvalAnalyzer`: parses `%eval` annotations from PGNs that already have Lichess computer analysis. No network call. Most efficient.
 - `LichessCloudEvalAnalyzer`: hits `POST /api/cloud-eval` for individual positions when needed (e.g., to compute heuristic side-checks like "what's the eval after a null move"). Cloud doesn't have all positions; gracefully returns null.
 
-### Future implementations
+### Implemented since MVP
 
-- `StockfishLocalAnalyzer`: spawns local Stockfish via `python-chess.engine`. Configurable depth/time/multipv. Becomes the canonical analyzer; cloud fallback for speed.
+- `StockfishLocalAnalyzer`: spawns local Stockfish via `python-chess.engine`. Configurable depth/time/multipv; one process per analyze run (UCI handshake paid once). It is now the **canonical** per-position source for `M_best` (local-first; cloud is fallback), backs the on-demand `POST /analysis/position` endpoint the Explore board calls, and is **required** for the Step-2 material-threat probe (the null-move probe can't run on cloud-eval). Resolved from `STOCKFISH_PATH` or `stockfish` on `PATH`; absent ⇒ feature degrades silently to cloud/heuristic-only. Every analysis sends `ucinewgame` so results are reproducible regardless of process warmth. Whole-game analysis (`analyze_game`) is still deferred — it only fills the per-position gap today.
 
 ### Practical note on MVP coverage
 

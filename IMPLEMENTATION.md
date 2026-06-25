@@ -166,8 +166,8 @@ chess-mistake-tracker/
 **Deliverables.**
 - `backend/app/services/heuristics.py` — implements rules from DESIGN.md:
   - **Step 4** detector: from `P_after`, find opponent's best response. If forcing (check or capture in `python-chess`'s `Move` features) AND eval drops ≥200cp further, fire Step 4.
-  - **Step 2** detector: from `P_before`, check if engine's best move (per the existing analysis) is forcing AND user's move was non-forcing AND `winrate_before ≥ 50`. Fire Step 2.
-  - **Step 1** detector: requires a "what if user passes" check. For MVP, approximate without a live engine: if engine's best move from `P_before` is responding to opponent's `M_opp` (e.g., it captures the piece `M_opp` just moved, or moves a piece `M_opp` just attacked), fire Step 1. Note approximation in code comments — this is the heuristic most likely to mislead and is the strongest argument for adding local Stockfish in v1.1.
+  - **Step 2** detector: from `P_before`, two paths (see DESIGN.md §"Step 2"). (a) `_step2`: engine's best move is a capture/check AND `M_user` non-forcing AND `winrate_before ≥ 50`. (b) `_step2_threat`: best move is *quiet* but creates a material/mate threat — detected by a null-move probe (play `M_best`, opponent passes, check whether the user then threatens mate or a SEE-winning capture). Path (b) needs the local engine and `chess_utils/see.py`.
+  - **Step 1** detector: requires a "what if user passes" check. For MVP, approximate without a live engine: if engine's best move from `P_before` is responding to opponent's `M_opp` (e.g., it captures the piece `M_opp` just moved, or moves a piece `M_opp` just attacked), fire Step 1 — with a guard that it does *not* fire when `M_user` captured the same square (wrong-recapture ⇒ Step 3, not a missed threat). Note approximation in code comments — this is the heuristic most likely to mislead and is the strongest argument for adding local Stockfish in v1.1.
   - **Step 3** as default.
 - Priority ordering 4 → 2 → 1 → 3, with all firing rules captured in a JSON `suggestion_debug` field on `Mistake`.
 - Run heuristics at the end of mistake detection.
@@ -323,7 +323,7 @@ This phase is optional and should be skipped unless the developer has a clear ne
 
 ## Post-MVP backlog (do not implement yet)
 
-- `StockfishLocalAnalyzer`. The single highest-value next step. Removes the "must request analysis on Lichess" friction. Implement as a new `Analyzer`. Update analysis service to fall back to local engine when `has_evals=false`.
+- ~~`StockfishLocalAnalyzer`~~ **(done)**. Implemented as the canonical per-position analyzer (local-first `M_best`, the `/analysis/position` endpoint behind the Explore board, and the Step-2 material-threat probe). Still outstanding from the original scope: using it for *whole-game* analysis so `has_evals=false` games are processable without requesting Lichess analysis first (`analyze_game` is the remaining gap).
 - `ChessComSource`. Implement the protocol. Likely needs a separate eval analyzer because chess.com's PGN doesn't include comparable engine evals — Stockfish-local makes this much easier.
 - Drill mode: re-present mistake positions to the user as puzzles after a delay; track recurrence.
 - Spaced repetition over mistake patterns.
