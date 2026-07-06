@@ -1,10 +1,12 @@
 """Recompute the persisted best move for existing mistakes, in place.
 
-Unlike `analyze-pending --force` (which drops and recreates Position/Mistake
-rows and would wipe any classifications), this re-runs only the heuristic
-suggestion pass — `assign_heuristic_suggestions` mutates best_move_uci /
-best_move_san / suggested_step on the existing rows and never touches the
-classified_* columns.
+This re-runs only the heuristic suggestion pass — `assign_heuristic_suggestions`
+mutates best_move_uci / best_move_san / suggested_step on the existing rows and
+never touches the classified_* columns. `analyze-pending --force` also
+preserves classifications now (detection reconciles Mistake rows in place; see
+DESIGN.md §"Re-analysis semantics"), but it re-runs the full pipeline
+(position rebuild + detection). This script remains the cheaper option when
+only the best-move/suggestion source changed.
 
 Use after changing the best-move source (e.g. the cloud→local-first flip) so
 the review-mode arrow matches what the local Explore board shows. Idempotent.

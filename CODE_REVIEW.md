@@ -24,13 +24,10 @@ Full review of docs (README.md, DESIGN.md, IMPLEMENTATION.md), the entire backen
 
 ## 2. Bugs
 
-### B1 — Re-analysis silently destroys user classifications (HIGH, data loss)
+### B1 — Re-analysis silently destroys user classifications — **FIXED 2026-07-06**
 
-- **Where:** `backend/app/services/mistake_detection.py:134` — `detect_mistakes()` runs `delete(Mistake).where(Mistake.game_id == game.id)` unconditionally, wiping `classified_step`, `classified_awareness`, `user_notes`, `classified_at`.
-- **Reachable via:** `POST /api/v1/games/{id}/analyze` on an already-analyzed game, and `POST /api/v1/games/analyze-pending?force=true` (`backend/app/api/games.py:151-199`).
-- **Evidence the hazard is known:** `scripts/retune_suppression.py` docstring — "WITHOUT re-running detection (which would drop+recreate rows and wipe classifications)". `scripts/backfill_best_move.py` exists specifically to avoid this path. The API endpoints have no such guard.
-- **Why it matters:** hand-entered classifications are the app's most valuable, non-recoverable data. Phase 12's planned "Re-analyze all" button would aim this directly at the user.
-- **Suggested fix:** in `detect_mistakes`, load existing mistakes keyed by `(game_id, ply)` before deleting; after re-detection, copy `classified_*`/`user_notes`/`classified_at` onto surviving rows. Alternatively refuse `force` without an explicit `acknowledge_data_loss` flag. Prefer the preserve-and-diff approach (see Feature F1).
+- **Was:** `detect_mistakes()` ran `delete(Mistake).where(Mistake.game_id == game.id)` unconditionally, wiping `classified_step`, `classified_awareness`, `user_notes`, `classified_at`. Reachable via `POST /games/{id}/analyze` on an analyzed game and `POST /games/analyze-pending?force=true`.
+- **Fix (implements F1):** `detect_mistakes` now reconciles rows by `(game_id, ply)` — detection fields updated in place, classifications never touched, auto-flags refreshed only while unclassified, stale unclassified rows deleted, stale **classified** rows kept frozen. Counters (`mistakes_new/updated/removed/preserved`) flow through `AnalysisResult` → `AnalyzeResponse`. Policy + rationale documented in DESIGN.md §"Re-analysis semantics"; regression tests in `backend/tests/test_mistake_detection.py` (§"Classification-preserving re-analysis", 7 tests). Stale docstrings in `api/games.py`, `services/analysis.py`, and both helper scripts updated.
 
 ### B2 — Study chapters starting from a custom FEN invert `is_user_move` (HIGH for OTB studies) — VERIFIED
 
@@ -97,7 +94,7 @@ Deviations that are **documented and fine** (no action): Step 4 uses the actual 
 
 ## 5. Recommended features (highest leverage first)
 
-- **F1 — Classification-preserving re-analysis** (fixes B1): re-detect, diff by `(game_id, ply)`, carry classifications onto survivors, report "N new / M removed / K preserved." Prerequisite for Phase 12's settings page + "Re-analyze all."
+- **F1 — Classification-preserving re-analysis** (fixes B1): ~~re-detect, diff by `(game_id, ply)`, carry classifications onto survivors, report "N new / M removed / K preserved."~~ **DONE 2026-07-06** — see B1. Phase 12's "Re-analyze all" button is now safe to build on top.
 - **F2 — Game refresh** (fixes gap 1): `POST /games/{id}/refresh` — implement `fetch_game_by_id`, update PGN/`has_evals`, clear `analyzed_at`. Pair with a "Request analysis on Lichess" deep link (`https://lichess.org/{source_game_id}`).
 - **F3 — Whole-game local Stockfish analysis** (`StockfishLocalAnalyzer.analyze_game`): makes `has_evals=false` games and all study chapters processable without Lichess; prerequisite for chess.com support. Already noted as the next step in project memory/DESIGN.
 - **F4 — Filtered analytics:** shared filter dependency (date range, source, color, severity, time control) across `/stats/*`; frontend layout is ready. Answers "do my patterns differ OTB vs online / blitz vs classical."
@@ -108,7 +105,7 @@ Deviations that are **documented and fine** (no action): Step 4 uses the actual 
 
 ## 6. Suggested order of work
 
-1. B1 / F1 (classification-preserving re-analysis) — protects existing data before anything else touches the pipeline.
+1. ~~B1 / F1 (classification-preserving re-analysis)~~ **DONE 2026-07-06.**
 2. B2 (FEN-start parity) — correctness for the OTB-study use case; add a regression test with a `[FEN]`-tagged chapter fixture.
 3. B4 (settings → study source wiring), then the Phase 12 settings UI on top.
 4. F2 (game refresh), unblocking the has_evals workflow.

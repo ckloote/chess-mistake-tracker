@@ -17,7 +17,7 @@ from backend.app.schemas.games import (
     ImportResponse,
 )
 from backend.app.schemas.mistakes import GameDetailOut
-from backend.app.services.analysis import analyze_game, analyze_pending
+from backend.app.services.analysis import AnalysisResult, analyze_game, analyze_pending
 from backend.app.services.ingestion import ingest
 from backend.app.services.local_engine import maybe_local_engine
 from backend.app.sources.registry import get_source, known_sources
@@ -48,6 +48,20 @@ def _start_of_day(d: date) -> datetime:
 
 def _end_of_day(d: date) -> datetime:
     return datetime.combine(d, time.max, tzinfo=timezone.utc)
+
+
+def _to_analyze_response(r: AnalysisResult) -> AnalyzeResponse:
+    return AnalyzeResponse(
+        game_id=r.game_id,
+        positions_created=r.positions_created,
+        mistakes_detected=r.mistakes_detected,
+        skipped=r.skipped,
+        reason=r.reason,
+        mistakes_new=r.mistakes_new,
+        mistakes_updated=r.mistakes_updated,
+        mistakes_removed=r.mistakes_removed,
+        mistakes_preserved=r.mistakes_preserved,
+    )
 
 
 @router.post("/import", response_model=ImportResponse)
@@ -159,13 +173,7 @@ async def analyze_one_game(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found.")
     async with maybe_local_engine(settings) as local:
         result = await analyze_game(db, game, local_analyzer=local)
-    return AnalyzeResponse(
-        game_id=result.game_id,
-        positions_created=result.positions_created,
-        mistakes_detected=result.mistakes_detected,
-        skipped=result.skipped,
-        reason=result.reason,
-    )
+    return _to_analyze_response(result)
 
 
 @router.post("/analyze-pending", response_model=AnalyzePendingResponse)
@@ -174,8 +182,9 @@ async def analyze_pending_games(
         default=False,
         description=(
             "When true, re-run analysis on already-analyzed games too. "
-            "Useful when the heuristic or thresholds change and the existing "
-            "Mistake/Position rows need backfilling."
+            "Useful when the heuristic or thresholds change. Safe for "
+            "classified data: mistakes are reconciled in place and user "
+            "classifications are preserved (DESIGN.md §Re-analysis semantics)."
         ),
     ),
     db: Session = Depends(get_db),
@@ -186,14 +195,5 @@ async def analyze_pending_games(
     return AnalyzePendingResponse(
         analyzed=sum(1 for r in results if not r.skipped),
         skipped=sum(1 for r in results if r.skipped),
-        results=[
-            AnalyzeResponse(
-                game_id=r.game_id,
-                positions_created=r.positions_created,
-                mistakes_detected=r.mistakes_detected,
-                skipped=r.skipped,
-                reason=r.reason,
-            )
-            for r in results
-        ],
+        results=[_to_analyze_response(r) for r in results],
     )

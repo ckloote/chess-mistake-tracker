@@ -1,6 +1,9 @@
-"""One-time retune: tighten the "still winning" suppression and prune the
-marginal inaccuracies it now covers — WITHOUT re-running detection (which would
-drop+recreate rows and wipe classifications).
+"""One-time retune (already run 2026-06-14): tighten the "still winning"
+suppression and prune the marginal inaccuracies it now covers — without
+re-running detection, which at the time dropped+recreated rows and would have
+wiped classifications. Detection has since become classification-preserving
+(DESIGN.md §"Re-analysis semantics"), with its keep-classified-rows policy
+modeled on this script's; a threshold change today can simply re-analyze.
 
 - Sets suppress_above_before/after = 75/68 on the AppSettings singleton (so
   future imports apply it automatically).

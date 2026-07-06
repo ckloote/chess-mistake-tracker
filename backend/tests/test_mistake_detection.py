@@ -211,3 +211,159 @@ async def test_blunder_mistake_has_endgame_flag_false_in_opening(db_session: Ses
     m = db_session.scalar(select(Mistake).where(Mistake.game_id == game.id))
     assert m is not None
     assert m.endgame_flag is False  # 6 plies in, all material on board
+
+
+# ---- Classification-preserving re-analysis ---------------------------------
+# DESIGN.md §"Re-analysis semantics": re-running detection reconciles Mistake
+# rows by ply instead of dropping them, so user classifications survive.
+
+def _classify(db: Session, m: Mistake, *, step: int = 4) -> None:
+    m.classified_step = step
+    m.classified_awareness = "didnt_see_it"
+    m.user_notes = "hung the f7 fork"
+    m.classified_at = datetime(2025, 2, 1, tzinfo=timezone.utc)
+    db.commit()
+
+
+async def test_reanalysis_preserves_classification_in_place(db_session: Session) -> None:
+    game = _make_game(db_session, SCHOLARS_MATE_PGN, "black", "abcd1234")
+    await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+    m = db_session.scalar(select(Mistake).where(Mistake.game_id == game.id))
+    assert m is not None
+    _classify(db_session, m)
+    original_id = m.id
+
+    result = await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+
+    rows = db_session.scalars(select(Mistake).where(Mistake.game_id == game.id)).all()
+    (row,) = rows
+    assert row.id == original_id  # updated in place, not recreated
+    assert row.classified_step == 4
+    assert row.classified_awareness == "didnt_see_it"
+    assert row.user_notes == "hung the f7 fork"
+    assert row.classified_at is not None
+    # Detection fields still re-derived on the surviving row.
+    assert row.severity == "blunder"
+    assert result.mistakes_new == 0
+    assert result.mistakes_updated == 1
+    assert result.mistakes_removed == 0
+    assert result.mistakes_preserved == 0
+
+
+async def test_reanalysis_refreshes_detection_fields_on_surviving_row(
+    db_session: Session,
+) -> None:
+    game = _make_game(db_session, SCHOLARS_MATE_PGN, "black", "abcd1234")
+    await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+    m = db_session.scalar(select(Mistake).where(Mistake.game_id == game.id))
+    assert m is not None
+    # Corrupt detection-derived fields; re-analysis must restore them.
+    m.severity = "inaccuracy"
+    m.winrate_drop = 1.0
+    db_session.commit()
+
+    await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+    db_session.refresh(m)
+    assert m.severity == "blunder"
+    assert m.winrate_drop > 20.0
+
+
+async def test_reanalysis_keeps_user_toggled_flags_once_classified(
+    db_session: Session,
+) -> None:
+    game = _make_game(db_session, SCHOLARS_MATE_PGN, "black", "abcd1234")
+    await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+    m = db_session.scalar(select(Mistake).where(Mistake.game_id == game.id))
+    assert m is not None
+    auto_time_pressure = m.time_pressure_flag
+    # User flips a tag at classification time; their version must win.
+    _classify(db_session, m)
+    m.time_pressure_flag = not auto_time_pressure
+    db_session.commit()
+
+    await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+    db_session.refresh(m)
+    assert m.time_pressure_flag == (not auto_time_pressure)
+
+
+async def test_reanalysis_resets_flags_while_unclassified(db_session: Session) -> None:
+    game = _make_game(db_session, SCHOLARS_MATE_PGN, "black", "abcd1234")
+    await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+    m = db_session.scalar(select(Mistake).where(Mistake.game_id == game.id))
+    assert m is not None
+    auto_time_pressure = m.time_pressure_flag
+    # Flag toggled but never classified: auto-detection wins on re-run.
+    m.time_pressure_flag = not auto_time_pressure
+    db_session.commit()
+
+    await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+    db_session.refresh(m)
+    assert m.time_pressure_flag == auto_time_pressure
+
+
+async def test_reanalysis_removes_stale_unclassified_rows(db_session: Session) -> None:
+    """A row the current rules no longer flag (e.g. after tightening
+    thresholds) is deleted — but only because it's unclassified."""
+    game = _make_game(db_session, SCHOLARS_MATE_PGN, "black", "abcd1234")
+    await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+    stale = Mistake(
+        game_id=game.id,
+        ply=2,  # 1...e5 — not a detectable mistake in this PGN
+        severity="inaccuracy",
+        winrate_before=55.0,
+        winrate_after=49.0,
+        winrate_drop=6.0,
+    )
+    db_session.add(stale)
+    db_session.commit()
+
+    result = await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+
+    plies = {m.ply for m in db_session.scalars(select(Mistake).where(Mistake.game_id == game.id))}
+    assert plies == {6}
+    assert result.mistakes_removed == 1
+    assert result.mistakes_preserved == 0
+
+
+async def test_reanalysis_keeps_stale_classified_rows(db_session: Session) -> None:
+    """A classified row is never deleted, even when the current rules no
+    longer flag its ply — same policy as scripts/retune_suppression.py."""
+    game = _make_game(db_session, SCHOLARS_MATE_PGN, "black", "abcd1234")
+    await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+    stale = Mistake(
+        game_id=game.id,
+        ply=2,
+        severity="inaccuracy",
+        winrate_before=55.0,
+        winrate_after=49.0,
+        winrate_drop=6.0,
+        classified_step=3,
+        classified_awareness="got_it_wrong",
+        classified_at=datetime(2025, 2, 1, tzinfo=timezone.utc),
+    )
+    db_session.add(stale)
+    db_session.commit()
+
+    result = await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+
+    rows = {
+        m.ply: m
+        for m in db_session.scalars(select(Mistake).where(Mistake.game_id == game.id))
+    }
+    assert set(rows) == {2, 6}
+    assert rows[2].classified_step == 3
+    # The stale row keeps its frozen detection fields too — it reflects the
+    # rules under which it was classified.
+    assert rows[2].severity == "inaccuracy"
+    assert result.mistakes_detected == 1  # only ply 6 is a current detection
+    assert result.mistakes_preserved == 1
+    assert result.mistakes_removed == 0
+
+
+async def test_first_analysis_counters(db_session: Session) -> None:
+    game = _make_game(db_session, SCHOLARS_MATE_PGN, "black", "abcd1234")
+    result = await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+    assert result.mistakes_new == result.mistakes_detected == 1
+    assert result.mistakes_updated == 0
+    assert result.mistakes_removed == 0
+    assert result.mistakes_preserved == 0

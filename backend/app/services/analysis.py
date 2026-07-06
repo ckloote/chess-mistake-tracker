@@ -23,6 +23,13 @@ class AnalysisResult:
     mistakes_detected: int
     skipped: bool
     reason: str | None = None
+    # Reconcile counters from classification-preserving re-analysis
+    # (DESIGN.md §"Re-analysis semantics"). On a first analysis new ==
+    # mistakes_detected and the rest are 0.
+    mistakes_new: int = 0
+    mistakes_updated: int = 0
+    mistakes_removed: int = 0  # stale unclassified rows deleted
+    mistakes_preserved: int = 0  # stale classified rows kept
 
 
 _TC_RE = re.compile(r"^\s*(\d+)\s*\+\s*(\d+)\s*$")
@@ -124,7 +131,10 @@ async def analyze_game(
     local_analyzer: Analyzer | None = None,
 ) -> AnalysisResult:
     """Run the analyzer for one game. Idempotent: drops + recreates Position
-    rows. Skips silently if has_evals is False (caller should surface).
+    rows; Mistake rows are *reconciled*, not recreated, so re-running never
+    destroys user classifications (see detect_mistakes / DESIGN.md
+    §"Re-analysis semantics"). Skips silently if has_evals is False (caller
+    should surface).
 
     `cloud_analyzer` is injectable so unit tests can stub the network. None →
     real Lichess cloud-eval (production).
@@ -155,10 +165,10 @@ async def analyze_game(
     rows = _to_position_rows(game, position_evals)
     session.add_all(rows)
     session.flush()  # so detect_mistakes' SELECT sees the new rows
-    mistakes = detect_mistakes(session, game)
+    detection = detect_mistakes(session, game)
     session.flush()
     await assign_heuristic_suggestions(
-        session, game, mistakes, cloud_analyzer, local_analyzer=local_analyzer
+        session, game, detection.mistakes, cloud_analyzer, local_analyzer=local_analyzer
     )
     game.analyzed_at = datetime.now(tz=timezone.utc)
     session.commit()
@@ -166,8 +176,12 @@ async def analyze_game(
     return AnalysisResult(
         game_id=game.id,
         positions_created=len(rows),
-        mistakes_detected=len(mistakes),
+        mistakes_detected=len(detection.mistakes),
         skipped=False,
+        mistakes_new=detection.new,
+        mistakes_updated=detection.updated,
+        mistakes_removed=detection.removed,
+        mistakes_preserved=detection.preserved,
     )
 
 
@@ -179,7 +193,8 @@ async def analyze_pending(
 ) -> list[AnalysisResult]:
     """Run analysis on has_evals=true games. By default only the ones not yet
     analyzed; with force=True, re-run already-analyzed games too (analyze_game
-    is idempotent — it drops and recreates positions/mistakes per call).
+    is idempotent — positions are dropped and recreated, mistakes are
+    reconciled in place so user classifications survive the re-run).
 
     Passes a single cloud analyzer (and single local analyzer when provided)
     to all calls so the underlying httpx client / Stockfish process is shared

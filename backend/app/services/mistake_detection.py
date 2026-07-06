@@ -2,14 +2,19 @@
 
 Implements the algorithm from DESIGN.md §"Mistake Detection". Suppression rules
 and severity thresholds come from Settings so they can be tuned per-user later.
+
+Re-analysis is classification-preserving (DESIGN.md §"Re-analysis semantics"):
+existing Mistake rows are reconciled by ply rather than dropped and recreated,
+so the user's classified_step / classified_awareness / user_notes survive
+re-running detection with new thresholds or refreshed evals.
 """
 from __future__ import annotations
 
 import statistics
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import chess
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.chess_utils import phase, winrate
@@ -109,9 +114,38 @@ def _median_user_move_time_ms(positions: list[Position]) -> float | None:
     return float(statistics.median(times))
 
 
-def detect_mistakes(session: Session, game: Game) -> list[Mistake]:
-    """Re-derive Mistake rows for one game. Idempotent: drops existing first.
-    Caller is responsible for committing the session."""
+@dataclass(frozen=True)
+class DetectionResult:
+    """Outcome of one reconcile pass.
+
+    `mistakes` holds every row that the *current* detection rules flag (both
+    newly created and updated-in-place); it's what the heuristic suggestion
+    pass should run over. Classified rows that the current rules no longer
+    flag are kept in the DB but deliberately NOT in this list — their old
+    suggestion/best-move stay frozen alongside their classification.
+    """
+
+    mistakes: list[Mistake] = field(default_factory=list)
+    new: int = 0
+    updated: int = 0
+    removed: int = 0  # unclassified rows deleted (no longer detected)
+    preserved: int = 0  # classified rows kept although no longer detected
+
+
+def detect_mistakes(session: Session, game: Game) -> DetectionResult:
+    """Re-derive Mistake rows for one game, reconciling against existing rows
+    by ply so re-analysis is classification-preserving:
+
+    - detected ply with no existing row     -> create
+    - detected ply with an existing row     -> update detection fields in place
+      (classification fields are never touched; auto-flags are refreshed only
+      while the row is unclassified — once classified, the user confirmed or
+      toggled the flags at save time and their version wins)
+    - existing row no longer detected       -> delete if unclassified, keep if
+      classified (same policy scripts/retune_suppression.py established: a
+      hand-classified mistake is never destroyed by a rules change)
+
+    Idempotent. Caller is responsible for committing the session."""
     t = _Thresholds.from_app_settings(get_app_settings(session))
 
     positions = list(
@@ -120,7 +154,7 @@ def detect_mistakes(session: Session, game: Game) -> list[Mistake]:
         ).all()
     )
     if len(positions) < 2:
-        return []
+        return DetectionResult()
 
     by_ply: dict[int, Position] = {p.ply: p for p in positions}
 
@@ -131,8 +165,16 @@ def detect_mistakes(session: Session, game: Game) -> list[Mistake]:
     initial_seconds, _ = parse_time_control(game.time_control)
     median_user_move_ms = _median_user_move_time_ms(positions)
 
-    session.execute(delete(Mistake).where(Mistake.game_id == game.id))
-    created: list[Mistake] = []
+    existing: dict[int, Mistake] = {
+        m.ply: m
+        for m in session.scalars(
+            select(Mistake).where(Mistake.game_id == game.id)
+        ).all()
+    }
+
+    detected: list[Mistake] = []
+    detected_plies: set[int] = set()
+    new = updated = 0
 
     for pos in positions:
         if not pos.is_user_move or pos.ply == 0:
@@ -156,20 +198,56 @@ def detect_mistakes(session: Session, game: Game) -> list[Mistake]:
         board_before = chess.Board(prev.fen)
         board_after = chess.Board(pos.fen)
 
-        mistake = Mistake(
-            game_id=game.id,
-            ply=pos.ply,
-            severity=severity,
-            eval_before_cp=_eval_cp_for_storage(prev.eval_cp, prev.mate_in),
-            eval_after_cp=_eval_cp_for_storage(pos.eval_cp, pos.mate_in),
-            winrate_before=wr_before,
-            winrate_after=wr_after,
-            winrate_drop=drop,
-            time_pressure_flag=_is_time_pressure(pos, initial_seconds, median_user_move_ms),
-            endgame_flag=phase.is_endgame(board_after),
-            transition_flag=phase.detected_transition(board_before, board_after),
-        )
-        session.add(mistake)
-        created.append(mistake)
+        time_pressure = _is_time_pressure(pos, initial_seconds, median_user_move_ms)
+        endgame = phase.is_endgame(board_after)
+        transition = phase.detected_transition(board_before, board_after)
 
-    return created
+        mistake = existing.get(pos.ply)
+        if mistake is None:
+            mistake = Mistake(
+                game_id=game.id,
+                ply=pos.ply,
+                severity=severity,
+                eval_before_cp=_eval_cp_for_storage(prev.eval_cp, prev.mate_in),
+                eval_after_cp=_eval_cp_for_storage(pos.eval_cp, pos.mate_in),
+                winrate_before=wr_before,
+                winrate_after=wr_after,
+                winrate_drop=drop,
+                time_pressure_flag=time_pressure,
+                endgame_flag=endgame,
+                transition_flag=transition,
+            )
+            session.add(mistake)
+            new += 1
+        else:
+            mistake.severity = severity
+            mistake.eval_before_cp = _eval_cp_for_storage(prev.eval_cp, prev.mate_in)
+            mistake.eval_after_cp = _eval_cp_for_storage(pos.eval_cp, pos.mate_in)
+            mistake.winrate_before = wr_before
+            mistake.winrate_after = wr_after
+            mistake.winrate_drop = drop
+            if mistake.classified_at is None:
+                mistake.time_pressure_flag = time_pressure
+                mistake.endgame_flag = endgame
+                mistake.transition_flag = transition
+            updated += 1
+        detected.append(mistake)
+        detected_plies.add(pos.ply)
+
+    removed = preserved = 0
+    for ply, row in existing.items():
+        if ply in detected_plies:
+            continue
+        if row.classified_at is not None:
+            preserved += 1
+            continue
+        session.delete(row)
+        removed += 1
+
+    return DetectionResult(
+        mistakes=detected,
+        new=new,
+        updated=updated,
+        removed=removed,
+        preserved=preserved,
+    )

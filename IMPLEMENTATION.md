@@ -287,7 +287,7 @@ chess-mistake-tracker/
 **Deliverables.**
 - Settings page wired to backend `GET/PATCH /settings`. Editable: Lichess username, study IDs, win% thresholds for inaccuracy/mistake/blunder, suppression bounds (the 30/90 defaults).
 - Re-analysis warning when settings change: "thresholds changed; re-analyze games to apply new rules."
-- "Re-analyze all" button.
+- "Re-analyze all" button. **(Backend prerequisite done 2026-07-06:** re-analysis is classification-preserving — `detect_mistakes` reconciles Mistake rows by ply instead of dropping them, so this button cannot destroy classifications. See DESIGN.md §"Re-analysis semantics". The button's result toast should surface the `mistakes_new/updated/removed/preserved` counters the endpoint returns.)
 - README.md update: install instructions, dev workflow, how to import games, how to point at studies.
 - Manual test pass on at least 5 real games.
 - A short HOWTO.md or wiki section explaining the classification system to a future user (or future self).
