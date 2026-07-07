@@ -131,10 +131,16 @@ class LichessOnlineSource:
         for record in await self._fetch(url, params, user.lichess_username):
             yield record
 
-    async def fetch_game_by_id(self, game_id: str) -> GameRecord:
-        # Determining user_color requires the user context. Defer until a caller
-        # actually needs single-game fetch (no Phase 2 path uses it).
-        raise NotImplementedError("Single-game fetch not implemented for Phase 2.")
+    async def fetch_game_by_id(self, user: User, game_id: str) -> GameRecord | None:
+        """Re-fetch one game via `GET /game/export/{id}` — the refresh
+        workflow, which picks up evals once Lichess analysis has been
+        requested for the game. Returns None if the user is no longer a
+        player in the returned PGN; raises httpx.HTTPStatusError on 404 /
+        upstream errors."""
+        url = f"{LICHESS_API_BASE}/game/export/{game_id}"
+        params: dict[str, str | int] = {"evals": "true", "clocks": "true"}
+        records = await self._fetch(url, params, user.lichess_username)
+        return records[0] if records else None
 
     async def _fetch(
         self,

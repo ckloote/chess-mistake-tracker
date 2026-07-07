@@ -41,6 +41,18 @@ class AnalyzePendingResponse(BaseModel):
     results: list[AnalyzeResponse]
 
 
+class RefreshResponse(BaseModel):
+    """Outcome of re-fetching one game from its source. `pgn_changed` implies
+    `analyzed_at` was cleared (the game is back in analyze-pending's queue).
+    `had_evals_before` -> `has_evals` going false -> true is the workflow this
+    endpoint exists for: Lichess analysis arrived, the game is analyzable."""
+
+    game_id: int
+    pgn_changed: bool
+    had_evals_before: bool
+    has_evals: bool
+
+
 class GameOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

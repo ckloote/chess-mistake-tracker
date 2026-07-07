@@ -1,4 +1,10 @@
-"""Ingestion orchestrator: pull games from a GameSource, dedupe, persist."""
+"""Ingestion orchestrator: pull games from a GameSource, dedupe, persist.
+
+Also home of the per-game refresh (DESIGN.md §"Practical note on MVP
+coverage"): ingest deliberately never updates an existing row, so refresh is
+the path by which a game picks up changes at the source — most importantly
+`%eval` annotations appearing after the user requests Lichess analysis, but
+also study chapters growing moves or correcting player tags."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -16,6 +22,14 @@ class IngestionResult:
     imported: int
     skipped: int
     total_in_db: int
+
+
+@dataclass(frozen=True)
+class RefreshResult:
+    game_id: int
+    pgn_changed: bool
+    had_evals_before: bool
+    has_evals: bool
 
 
 def _record_to_game(user: User, record: GameRecord) -> Game:
@@ -70,3 +84,49 @@ async def ingest(
     ) or 0
 
     return IngestionResult(imported=imported, skipped=skipped, total_in_db=total_in_db)
+
+
+async def refresh_game(
+    session: Session,
+    user: User,
+    source: GameSource,
+    game: Game,
+) -> RefreshResult | None:
+    """Re-fetch `game` from its source and update the row in place.
+
+    Metadata (players, elos, result, time control, user_color) always follows
+    the fresh fetch. `analyzed_at` is cleared only when the PGN actually
+    changed — that's what marks the existing Position rows stale and puts the
+    game back in analyze-pending's queue; re-analysis then reconciles Mistake
+    rows without touching classifications (§"Re-analysis semantics").
+
+    Returns None when the source no longer lists the user as a player —
+    nothing is modified in that case. Network/upstream errors propagate as
+    httpx exceptions for the caller to map."""
+    record = await source.fetch_game_by_id(user, game.source_game_id)
+    if record is None:
+        return None
+
+    pgn_changed = record.pgn != game.pgn
+    had_evals_before = game.has_evals
+
+    game.pgn = record.pgn
+    game.has_evals = record.has_evals
+    game.user_color = record.user_color
+    game.white = record.white
+    game.black = record.black
+    game.white_elo = record.white_elo
+    game.black_elo = record.black_elo
+    game.result = record.result
+    game.time_control = record.time_control
+    game.played_at = record.played_at
+    if pgn_changed:
+        game.analyzed_at = None
+
+    session.commit()
+    return RefreshResult(
+        game_id=game.id,
+        pgn_changed=pgn_changed,
+        had_evals_before=had_evals_before,
+        has_evals=game.has_evals,
+    )

@@ -66,7 +66,7 @@ Full review of docs (README.md, DESIGN.md, IMPLEMENTATION.md), the entire backen
 
 ## 3. Spec-conformance gaps
 
-1. **"Needs Lichess analysis" re-fetch workflow is broken.** DESIGN.md §"Practical note on MVP coverage" promises: import without evals → request analysis on Lichess → re-fetch → processable. But `ingest()` (`backend/app/services/ingestion.py:56`) skips any existing `source_game_id`, and `fetch_game_by_id` is `NotImplementedError` in both sources. No path exists to refresh a game's PGN/`has_evals`; the UI status pill ("Needs Lichess analysis", `frontend/src/pages/Games.tsx`) can never transition. Same mechanism means study chapters that grow after import are frozen. → Feature F2.
+1. ~~**"Needs Lichess analysis" re-fetch workflow is broken.**~~ **FIXED 2026-07-06** (implements F2): `fetch_game_by_id` implemented in both sources (protocol signature now `(user, game_id) -> GameRecord | None` — the original couldn't resolve `user_color`; DESIGN.md updated), plus `refresh_game` service and `POST /games/{id}/refresh`. Refresh updates PGN/`has_evals`/metadata in place and clears `analyzed_at` only when the PGN changed; upstream 404 → 404, user-no-longer-a-player → 409, other upstream errors → 502. Also un-freezes grown study chapters. UI affordance (refresh action on the "Needs Lichess analysis" pill + Lichess deep link) remains a Phase 12 item.
 2. **Phase 12 outstanding (expected):** Settings page placeholder; no import/analyze/re-analyze controls anywhere in the UI (Games empty-state says to use `curl`); no re-analysis warning; no HOWTO.md. FastAPI does not serve `frontend/dist/` despite DESIGN §"Production-style local serve" and the comment in `frontend/src/api/client.ts`; `GET /games/import/status/{job_id}` doesn't exist (acceptable — ingestion is synchronous).
 3. **Stats filters missing.** Phase 11 acceptance: "Filters (date range, source) update all charts." `/stats/*` endpoints accept no filters. Also missing from the Phase 11 deliverables list: severity-distribution-by-step chart; time-pressure correlation *by month* (implemented as an overall proportion); dashboard "recent games" strip.
 4. **`suggestion_debug` doesn't record "all that fired."** DESIGN §Tie-breaking says record every detector that fired; the cascade (`backend/app/services/heuristics.py:364-401`) short-circuits at first fire, so lower-priority detectors are never evaluated. Debug shows "what ran until something fired."
@@ -92,7 +92,7 @@ Deviations that are **documented and fine** (no action): Step 4 uses the actual 
 ## 5. Recommended features (highest leverage first)
 
 - **F1 — Classification-preserving re-analysis** (fixes B1): ~~re-detect, diff by `(game_id, ply)`, carry classifications onto survivors, report "N new / M removed / K preserved."~~ **DONE 2026-07-06** — see B1. Phase 12's "Re-analyze all" button is now safe to build on top.
-- **F2 — Game refresh** (fixes gap 1): `POST /games/{id}/refresh` — implement `fetch_game_by_id`, update PGN/`has_evals`, clear `analyzed_at`. Pair with a "Request analysis on Lichess" deep link (`https://lichess.org/{source_game_id}`).
+- **F2 — Game refresh** (fixes gap 1): ~~`POST /games/{id}/refresh` — implement `fetch_game_by_id`, update PGN/`has_evals`, clear `analyzed_at`.~~ **DONE 2026-07-06** — see gap 1. The "Request analysis on Lichess" deep link + refresh button in the Games UI go with Phase 12.
 - **F3 — Whole-game local Stockfish analysis** (`StockfishLocalAnalyzer.analyze_game`): makes `has_evals=false` games and all study chapters processable without Lichess; prerequisite for chess.com support. Already noted as the next step in project memory/DESIGN.
 - **F4 — Filtered analytics:** shared filter dependency (date range, source, color, severity, time control) across `/stats/*`; frontend layout is ready. Answers "do my patterns differ OTB vs online / blitz vs classical."
 - **F5 — Drill mode** (from the existing backlog): re-present classified mistake positions as find-the-move puzzles ordered by weakest Layer A × B cell, spaced repetition on misses. Closes the diagnosis → training loop; today the prescription is text-only.
@@ -105,8 +105,8 @@ Deviations that are **documented and fine** (no action): Step 4 uses the actual 
 1. ~~B1 / F1 (classification-preserving re-analysis)~~ **DONE 2026-07-06.**
 2. ~~B2 (FEN-start parity)~~ **DONE 2026-07-06.**
 3. ~~B4 (settings → study source wiring)~~ **DONE 2026-07-06** — the Phase 12 settings UI can now build on it.
-4. F2 (game refresh), unblocking the has_evals workflow.
-5. B3 + minor bugs opportunistically alongside the above.
+4. ~~F2 (game refresh)~~ **DONE 2026-07-06.**
+5. B3 + minor bugs opportunistically alongside the above; Phase 12 UI next (all backend prerequisites in place).
 6. F3 → F4 → F5 as feature work.
 
 ## 7. Verification notes for the next agent

@@ -41,4 +41,11 @@ class GameSource(Protocol):
         limit: int | None = None,
     ) -> AsyncIterator[GameRecord]: ...
 
-    async def fetch_game_by_id(self, game_id: str) -> GameRecord: ...
+    async def fetch_game_by_id(self, user: User, game_id: str) -> GameRecord | None:
+        """Re-fetch one game by its source_game_id (the refresh workflow).
+        `user` is needed to resolve user_color — DESIGN.md's original
+        `(game_id)`-only signature couldn't build a GameRecord. Returns None
+        when the fetched data no longer lists the user as a player; raises
+        httpx errors for network / upstream failures (the caller maps them
+        to HTTP responses)."""
+        ...

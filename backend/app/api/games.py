@@ -1,6 +1,7 @@
 import logging
 from datetime import date, datetime, time, timezone
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
@@ -15,11 +16,12 @@ from backend.app.schemas.games import (
     GameOut,
     ImportRequest,
     ImportResponse,
+    RefreshResponse,
 )
 from backend.app.schemas.mistakes import GameDetailOut
 from backend.app.services.analysis import AnalysisResult, analyze_game, analyze_pending
 from backend.app.services.app_settings import get_app_settings
-from backend.app.services.ingestion import ingest
+from backend.app.services.ingestion import ingest, refresh_game
 from backend.app.services.local_engine import maybe_local_engine
 from backend.app.sources.registry import get_source, known_sources
 
@@ -166,6 +168,59 @@ def get_game(game_id: int, db: Session = Depends(get_db)) -> GameDetailOut:
             "positions": positions,
             "mistakes": mistakes,
         }
+    )
+
+
+@router.post("/{game_id}/refresh", response_model=RefreshResponse)
+async def refresh_one_game(
+    game_id: int,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> RefreshResponse:
+    """Re-fetch the game from its source (DESIGN.md §"Practical note on MVP
+    coverage"): after requesting Lichess analysis on a has_evals=false game,
+    refresh picks up the %eval annotations and clears analyzed_at so the game
+    becomes processable. Also refreshes grown/edited study chapters."""
+    game = db.get(Game, game_id)
+    if game is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found.")
+    user = _get_configured_user(db, settings)
+    try:
+        source = get_source(game.source, get_app_settings(db))
+    except (KeyError, ValueError) as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    try:
+        result = await refresh_game(db, user, source, game)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Game {game.source_game_id!r} was not found on {game.source}.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"{game.source} returned an error: {e}",
+        )
+    except httpx.HTTPError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not reach {game.source}: {e}",
+        )
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Refreshed data no longer lists the configured user as a player; "
+                "check the username / study_player_aliases settings."
+            ),
+        )
+    return RefreshResponse(
+        game_id=result.game_id,
+        pgn_changed=result.pgn_changed,
+        had_evals_before=result.had_evals_before,
+        has_evals=result.has_evals,
     )
 
 

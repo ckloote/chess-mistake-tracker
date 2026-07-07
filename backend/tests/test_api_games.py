@@ -115,3 +115,115 @@ def test_get_game_returns_positions_and_mistakes(client, db) -> None:
 def test_get_game_404_when_missing(client) -> None:
     response = client.get("/api/v1/games/99999")
     assert response.status_code == 404
+
+
+# ---- POST /games/{id}/refresh ----------------------------------------------
+
+class _StubRefreshSource:
+    """Stands in for the registry-built source in refresh route tests."""
+
+    name = "lichess_online"
+
+    def __init__(self, record=None, error=None):
+        self._record = record
+        self._error = error
+
+    async def fetch_game_by_id(self, user, game_id):
+        if self._error is not None:
+            raise self._error
+        return self._record
+
+
+def _override_settings(username: str = "configured_user"):
+    from backend.app.config import Settings
+
+    return lambda: Settings(lichess_username=username, _env_file=None)
+
+
+def test_refresh_updates_game_and_reports_eval_arrival(client, db, monkeypatch) -> None:
+    from dataclasses import replace as dc_replace
+
+    from backend.app.config import get_settings
+    from backend.app.main import app
+    from backend.app.sources.lichess_online import parse_pgn_game
+
+    user = make_user(db)
+    game = make_game(db, user, has_evals=False, analyzed=True)
+
+    refreshed_pgn = (
+        '[Event "Test"]\n[Site "https://lichess.org/g0000001"]\n'
+        f'[White "{game.white}"]\n[Black "{game.black}"]\n[Result "1-0"]\n\n'
+        "1. e4 { [%eval 0.2] } e5 { [%eval 0.1] } 1-0\n"
+    )
+    record = parse_pgn_game(refreshed_pgn, user.lichess_username)
+    assert record is not None and record.has_evals
+    record = dc_replace(record, source_game_id=game.source_game_id)
+
+    monkeypatch.setattr(
+        "backend.app.api.games.get_source",
+        lambda name, settings: _StubRefreshSource(record=record),
+    )
+    app.dependency_overrides[get_settings] = _override_settings(user.lichess_username)
+    try:
+        response = client.post(f"/api/v1/games/{game.id}/refresh")
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
+
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data == {
+        "game_id": game.id,
+        "pgn_changed": True,
+        "had_evals_before": False,
+        "has_evals": True,
+    }
+    detail = client.get(f"/api/v1/games/{game.id}").json()
+    assert detail["has_evals"] is True
+    assert detail["analyzed_at"] is None  # stale analysis marked pending
+
+
+def test_refresh_conflict_when_user_no_longer_a_player(client, db, monkeypatch) -> None:
+    from backend.app.config import get_settings
+    from backend.app.main import app
+
+    user = make_user(db)
+    game = make_game(db, user)
+    monkeypatch.setattr(
+        "backend.app.api.games.get_source",
+        lambda name, settings: _StubRefreshSource(record=None),
+    )
+    app.dependency_overrides[get_settings] = _override_settings(user.lichess_username)
+    try:
+        response = client.post(f"/api/v1/games/{game.id}/refresh")
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
+    assert response.status_code == 409
+
+
+def test_refresh_maps_upstream_404(client, db, monkeypatch) -> None:
+    import httpx
+
+    from backend.app.config import get_settings
+    from backend.app.main import app
+
+    user = make_user(db)
+    game = make_game(db, user)
+    request = httpx.Request("GET", "https://lichess.org/game/export/g0000001")
+    error = httpx.HTTPStatusError(
+        "404", request=request, response=httpx.Response(404, request=request)
+    )
+    monkeypatch.setattr(
+        "backend.app.api.games.get_source",
+        lambda name, settings: _StubRefreshSource(error=error),
+    )
+    app.dependency_overrides[get_settings] = _override_settings(user.lichess_username)
+    try:
+        response = client.post(f"/api/v1/games/{game.id}/refresh")
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
+    assert response.status_code == 404
+    assert "not found on lichess_online" in response.json()["detail"]
+
+
+def test_refresh_404_when_game_missing(client) -> None:
+    assert client.post("/api/v1/games/99999/refresh").status_code == 404

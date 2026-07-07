@@ -190,5 +190,34 @@ class LichessStudySource:
             if owns_client:
                 await client.aclose()
 
-    async def fetch_game_by_id(self, game_id: str) -> GameRecord:
-        raise NotImplementedError("Single-game fetch not implemented for studies.")
+    async def fetch_game_by_id(self, user: User, game_id: str) -> GameRecord | None:
+        """Re-fetch one chapter via `GET /api/study/{studyId}/{chapterId}.pgn`
+        (the refresh workflow — picks up added moves/evals or corrected player
+        tags). `game_id` is the stored `{studyId}:{chapterId}`. Returns None
+        if the user (or an alias) no longer matches a player; raises
+        httpx.HTTPStatusError on 404 / upstream errors."""
+        study_id, _, chapter_id = game_id.partition(":")
+        if not chapter_id:
+            raise ValueError(
+                f"Study game id must look like 'studyId:chapterId', got {game_id!r}."
+            )
+        validate_study_id(study_id)
+
+        owns_client = self._client is None
+        client = self._client or httpx.AsyncClient(timeout=httpx.Timeout(60.0))
+        try:
+            response = await client.get(
+                f"{LICHESS_API_BASE}/api/study/{study_id}/{chapter_id}.pgn",
+                params={"clocks": "true", "comments": "true"},
+                headers={"Accept": "application/x-chess-pgn"},
+            )
+            response.raise_for_status()
+            text = response.text
+        finally:
+            if owns_client:
+                await client.aclose()
+
+        game = chess.pgn.read_game(io.StringIO(text))
+        if game is None:
+            return None
+        return _record_from_chapter(game, study_id, user.lichess_username, self._aliases)
