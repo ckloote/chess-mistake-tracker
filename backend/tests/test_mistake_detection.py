@@ -213,6 +213,47 @@ async def test_blunder_mistake_has_endgame_flag_false_in_opening(db_session: Ses
     assert m.endgame_flag is False  # 6 plies in, all material on board
 
 
+# ---- Custom-[FEN] starts: mistakes land on the right player's plies --------
+
+# Position after 1. e4 e5 2. Qh5 — black to move, so the chapter's ply 1 is a
+# black move. Black's Nf6?? is ply 3 here (it was ply 6 in the full game).
+FEN_START_PGN = """\
+[Event "OTB study"]
+[Site "https://lichess.org/study/stdy0001/chap0001"]
+[White "alice"]
+[Black "configured_user"]
+[Result "1-0"]
+[SetUp "1"]
+[FEN "rnbqkbnr/pppp1ppp/8/4p2Q/4P3/8/PPPP1PPP/RNB1KBNR b KQkq - 1 2"]
+[TimeControl "300+0"]
+
+2... Nc6 { [%eval -0.35] [%clk 0:04:58] } 3. Bc4 { [%eval -0.30] [%clk 0:04:50] }
+3... Nf6 { [%eval 9.21] [%clk 0:04:52] } 4. Qxf7# { [%clk 0:04:48] } 1-0
+"""
+
+
+async def test_fen_start_blunder_attributed_to_black_user(db_session: Session) -> None:
+    game = _make_game(db_session, FEN_START_PGN, "black", "stdy0001:chap0001")
+    result = await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+    assert result.mistakes_detected == 1
+    m = db_session.scalar(select(Mistake).where(Mistake.game_id == game.id))
+    assert m is not None
+    assert m.ply == 3  # 3...Nf6, a black move on an odd ply
+    assert m.severity == "blunder"
+
+
+async def test_fen_start_no_blunder_for_white_user(db_session: Session) -> None:
+    """Same chapter, user as white: Nf6 belongs to black, so nothing should
+    be flagged. Under ply parity, ply 3 would wrongly count as white's."""
+    pgn = FEN_START_PGN.replace(
+        '[White "alice"]\n[Black "configured_user"]',
+        '[White "configured_user"]\n[Black "alice"]',
+    )
+    game = _make_game(db_session, pgn, "white", "stdy0001:chap0002")
+    result = await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+    assert result.mistakes_detected == 0
+
+
 # ---- Classification-preserving re-analysis ---------------------------------
 # DESIGN.md §"Re-analysis semantics": re-running detection reconciles Mistake
 # rows by ply instead of dropping them, so user classifications survive.

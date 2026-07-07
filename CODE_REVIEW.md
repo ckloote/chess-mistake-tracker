@@ -29,12 +29,10 @@ Full review of docs (README.md, DESIGN.md, IMPLEMENTATION.md), the entire backen
 - **Was:** `detect_mistakes()` ran `delete(Mistake).where(Mistake.game_id == game.id)` unconditionally, wiping `classified_step`, `classified_awareness`, `user_notes`, `classified_at`. Reachable via `POST /games/{id}/analyze` on an analyzed game and `POST /games/analyze-pending?force=true`.
 - **Fix (implements F1):** `detect_mistakes` now reconciles rows by `(game_id, ply)` — detection fields updated in place, classifications never touched, auto-flags refreshed only while unclassified, stale unclassified rows deleted, stale **classified** rows kept frozen. Counters (`mistakes_new/updated/removed/preserved`) flow through `AnalysisResult` → `AnalyzeResponse`. Policy + rationale documented in DESIGN.md §"Re-analysis semantics"; regression tests in `backend/tests/test_mistake_detection.py` (§"Classification-preserving re-analysis", 7 tests). Stale docstrings in `api/games.py`, `services/analysis.py`, and both helper scripts updated.
 
-### B2 — Study chapters starting from a custom FEN invert `is_user_move` (HIGH for OTB studies) — VERIFIED
+### B2 — Study chapters starting from a custom FEN invert `is_user_move` — **FIXED 2026-07-06**
 
-- **Where:** `backend/app/services/analysis.py:42` (`is_user_move`) and `:76-117` (`_to_position_rows` clock attribution) assume white moves on odd plies — only true from the standard starting position. `frontend/src/components/MoveList.tsx` (`buildPairs`) makes the same parity assumption.
-- **Verified repro:** parsed a chapter with `[FEN "... b KQkq - 0 1"]` (black to move first) through `parse_pgn_for_positions` + `is_user_move(ply, "white")`: every **black** move was flagged as the white user's move.
-- **Impact:** for any study chapter recorded from a mid-game position (the OTB-analysis use case), mistakes get attributed to the opponent's moves and the user's real mistakes are missed. Clock deltas also swap colors.
-- **Suggested fix:** derive the mover from the previous position's side-to-move (`chess.Board(prev_fen).turn`) instead of ply parity. `PositionEval.fen` is already available at row-build time. Fix MoveList pairing similarly (start a half-empty first row when ply 1 is a black move).
+- **Was:** `is_user_move` and `_to_position_rows`' clock attribution (`backend/app/services/analysis.py`) assumed white moves on odd plies — only true from the standard starting position. `MoveList.tsx`'s `buildPairs` made the same parity assumption. Verified repro: a `[FEN "... b ..."]` chapter flagged every black move as the white user's; mistakes landed on the opponent's plies and clock deltas swapped colors.
+- **Fix:** mover is now derived from the position's FEN side-to-move (`mover_color` in `services/analysis.py`; mover = opposite of the turn field) for both `is_user_move` and clock-delta attribution. `MoveList.tsx` derives mover and move number from the FEN the same way, pairing score-sheet rows correctly for black-first starts. Documented in DESIGN.md (§Data Model `positions` note) and IMPLEMENTATION.md Phase 4. Regression tests: FEN-start fixture in `test_analysis_service.py` (attribution + clocks) and `test_mistake_detection.py` (blunder lands on the black user's ply 3; nothing flagged for a white user). **Note:** any FEN-start study chapters analyzed before this fix carry inverted `is_user_move` rows — re-analyze them (`analyze-pending?force=true` is classification-preserving since the B1 fix).
 
 ### B3 — `mate_in == 0` always treated as "white wins" (MEDIUM, wrong-direction when hit) — VERIFIED
 
@@ -106,7 +104,7 @@ Deviations that are **documented and fine** (no action): Step 4 uses the actual 
 ## 6. Suggested order of work
 
 1. ~~B1 / F1 (classification-preserving re-analysis)~~ **DONE 2026-07-06.**
-2. B2 (FEN-start parity) — correctness for the OTB-study use case; add a regression test with a `[FEN]`-tagged chapter fixture.
+2. ~~B2 (FEN-start parity)~~ **DONE 2026-07-06.**
 3. B4 (settings → study source wiring), then the Phase 12 settings UI on top.
 4. F2 (game refresh), unblocking the has_evals workflow.
 5. B3 + minor bugs opportunistically alongside the above.

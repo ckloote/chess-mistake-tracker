@@ -8,26 +8,44 @@ interface Props {
   onSelect: (ply: number) => void
 }
 
-// Pairs positions[1..] into (white_move, black_move) rows: positions[1] is
-// move 1 by white, positions[2] is move 1 by black, etc.
+// Pairs positions[1..] into (white_move, black_move) score-sheet rows.
 interface PairRow {
   number: number
   white: Position | null
   black: Position | null
 }
 
+// Who played the move that produced this position: the opposite of the FEN's
+// side-to-move. Derived from the FEN, not ply parity, because study chapters
+// can start from a custom [FEN] with black to move (mirrors the backend's
+// mover_color in services/analysis.py).
+function moverOf(p: Position): 'white' | 'black' {
+  return p.fen.split(' ')[1] === 'w' ? 'black' : 'white'
+}
+
+// Move number for the move that produced this position. The FEN's fullmove
+// counter increments after black's move, so a black move's number is one less
+// than its resulting FEN reports.
+function moveNumberOf(p: Position): number {
+  const full = Number.parseInt(p.fen.split(' ')[5] ?? '1', 10) || 1
+  return moverOf(p) === 'white' ? full : full - 1
+}
+
 function buildPairs(positions: Position[]): PairRow[] {
   // Skip ply 0 (starting position, no move).
   const moves = positions.filter((p) => p.ply > 0)
   const rows: PairRow[] = []
-  for (let i = 0; i < moves.length; i += 2) {
-    const white = moves[i] ?? null
-    const black = moves[i + 1] ?? null
-    rows.push({
-      number: Math.floor(i / 2) + 1,
-      white,
-      black,
-    })
+  for (const p of moves) {
+    const number = moveNumberOf(p)
+    const last = rows[rows.length - 1]
+    if (moverOf(p) === 'white') {
+      rows.push({ number, white: p, black: null })
+    } else if (last && last.number === number && last.black === null) {
+      last.black = p
+    } else {
+      // Black move with no white half to pair with — a black-first start.
+      rows.push({ number, white: null, black: p })
+    }
   }
   return rows
 }
@@ -67,7 +85,7 @@ export function MoveList({
       <table>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.number}>
+            <tr key={row.white?.ply ?? row.black?.ply ?? row.number}>
               <td className="move-num">{row.number}.</td>
               <td>
                 {row.white && (

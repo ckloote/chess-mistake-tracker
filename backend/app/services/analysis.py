@@ -46,16 +46,26 @@ def parse_time_control(tc: str | None) -> tuple[int | None, int | None]:
     return int(m.group(1)), int(m.group(2))
 
 
-def is_user_move(ply: int, user_color: str) -> bool:
-    """True iff the move that produced ply N was played by the configured user.
-    ply 0 is the starting position (no move) and is never a user move."""
+def mover_color(fen: str) -> str | None:
+    """Color of the player who made the move *producing* this position — the
+    opposite of the FEN's side-to-move. None for a malformed FEN."""
+    parts = fen.split()
+    if len(parts) < 2 or parts[1] not in ("w", "b"):
+        return None
+    return "black" if parts[1] == "w" else "white"
+
+
+def is_user_move(ply: int, fen: str, user_color: str) -> bool:
+    """True iff the move that produced this position was played by the
+    configured user. ply 0 is the starting position (no move) and is never a
+    user move.
+
+    The mover is derived from the position's FEN, NOT from ply parity: study
+    chapters can start from a custom [FEN] with black to move (an OTB game
+    picked up mid-way), where parity would invert every attribution."""
     if ply <= 0:
         return False
-    if user_color == "white":
-        return ply % 2 == 1
-    if user_color == "black":
-        return ply % 2 == 0
-    return False
+    return mover_color(fen) == user_color
 
 
 def compute_time_spent_ms(
@@ -91,9 +101,11 @@ def _to_position_rows(
 
     rows: list[Position] = []
     for pe in position_evals:
-        # Even ply > 0 = black just moved; odd ply = white just moved.
-        is_white_move = pe.ply > 0 and pe.ply % 2 == 1
-        is_black_move = pe.ply > 0 and pe.ply % 2 == 0
+        # Who moved is read off the FEN (mover = opposite of side-to-move),
+        # not off ply parity — see is_user_move for why.
+        mover = mover_color(pe.fen) if pe.ply > 0 else None
+        is_white_move = mover == "white"
+        is_black_move = mover == "black"
 
         prev_clock = last_white_clock if is_white_move else last_black_clock if is_black_move else None
         time_spent = (
@@ -114,7 +126,7 @@ def _to_position_rows(
                 fen=pe.fen,
                 san=pe.san,
                 uci=pe.uci,
-                is_user_move=is_user_move(pe.ply, game.user_color),
+                is_user_move=is_user_move(pe.ply, pe.fen, game.user_color),
                 eval_cp=pe.eval_cp,
                 mate_in=pe.mate_in,
                 clock_ms=pe.clock_ms,

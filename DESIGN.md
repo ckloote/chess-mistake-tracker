@@ -120,6 +120,14 @@ One row per ply. Generated when a game is analyzed. Lazy: only created on first 
 
 Index on (`game_id`, `ply`).
 
+`is_user_move` (and the clock-delta attribution behind `time_spent_ms`) is
+derived from the position's **FEN side-to-move** (mover = the opposite side),
+not from ply parity. Parity only holds for games that start from the standard
+position with white to move; a study chapter with a custom `[FEN]` tag — the
+normal case for an OTB game picked up mid-way — can start with black to move,
+and parity would invert every attribution. The frontend move list derives
+mover and move number from the FEN the same way.
+
 ### `mistakes`
 One row per detected mistake. Created during analysis after `positions` are populated.
 

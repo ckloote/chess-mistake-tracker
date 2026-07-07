@@ -129,7 +129,7 @@ chess-mistake-tracker/
 **Deliverables.**
 - `backend/app/analyzers/base.py` — `Analyzer` protocol, `EvalResult`, `PositionEval` dataclasses.
 - `backend/app/analyzers/lichess_pgn.py` — parses `%eval` and `%clk` annotations from a PGN. Returns one `PositionEval` per ply with `eval_cp` (or `mate_in`) and `clock_ms`.
-- `backend/app/services/analysis.py` — for a given `Game`: if `has_evals`, run `LichessPgnEvalAnalyzer`, populate `Position` rows (ply 0 through last move), compute `is_user_move` per ply, compute `time_spent_ms` from clock deltas. Set `analyzed_at`.
+- `backend/app/services/analysis.py` — for a given `Game`: if `has_evals`, run `LichessPgnEvalAnalyzer`, populate `Position` rows (ply 0 through last move), compute `is_user_move` per ply (from the FEN's side-to-move, **not** ply parity — custom-`[FEN]` study chapters can start with black to move; fixed 2026-07-06), compute `time_spent_ms` from clock deltas. Set `analyzed_at`.
 - `POST /api/v1/games/{id}/analyze` endpoint. Idempotent: re-running drops and recreates positions.
 - `POST /api/v1/games/analyze-pending` runs analysis on all `has_evals=true` games not yet analyzed.
 - Tests for eval/clock parsing across edge cases: mate evals, missing evals on some plies, decimal vs integer evals, clock formats.
