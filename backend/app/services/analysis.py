@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+import httpx
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -32,18 +33,19 @@ class AnalysisResult:
     mistakes_preserved: int = 0  # stale classified rows kept
 
 
-_TC_RE = re.compile(r"^\s*(\d+)\s*\+\s*(\d+)\s*$")
+_TC_RE = re.compile(r"^\s*(\d+)\s*(?:\+\s*(\d+))?\s*$")
 
 
 def parse_time_control(tc: str | None) -> tuple[int | None, int | None]:
-    """`"300+0"` -> (300, 0). Anything non-standard (OTB, correspondence,
-    empty) -> (None, None) — caller treats those plies as unmeasurable."""
+    """`"300+0"` -> (300, 0); a bare `"600"` (no increment recorded) ->
+    (600, 0). Anything non-standard (OTB, correspondence `1/86400`, empty)
+    -> (None, None) — caller treats those plies as unmeasurable."""
     if not tc:
         return None, None
     m = _TC_RE.match(tc)
     if not m:
         return None, None
-    return int(m.group(1)), int(m.group(2))
+    return int(m.group(1)), int(m.group(2) or 0)
 
 
 def mover_color(fen: str) -> str | None:
@@ -208,18 +210,33 @@ async def analyze_pending(
     is idempotent — positions are dropped and recreated, mistakes are
     reconciled in place so user classifications survive the re-run).
 
-    Passes a single cloud analyzer (and single local analyzer when provided)
-    to all calls so the underlying httpx client / Stockfish process is shared
-    across the run."""
+    A single cloud analyzer (and single local analyzer when provided) is used
+    for every game so the underlying httpx client / Stockfish process is
+    shared across the run. When the caller doesn't supply one, we build it
+    here around one shared httpx client — otherwise each cloud-eval call
+    would pay connection setup on its own throwaway client."""
     stmt = select(Game).where(Game.has_evals.is_(True))
     if not force:
         stmt = stmt.where(Game.analyzed_at.is_(None))
-    games = session.scalars(stmt).all()
-    return [
-        await analyze_game(
-            session, g,
-            cloud_analyzer=cloud_analyzer,
-            local_analyzer=local_analyzer,
-        )
-        for g in games
-    ]
+    games = list(session.scalars(stmt).all())
+
+    if cloud_analyzer is not None:
+        return [
+            await analyze_game(
+                session, g,
+                cloud_analyzer=cloud_analyzer,
+                local_analyzer=local_analyzer,
+            )
+            for g in games
+        ]
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+        shared_cloud = LichessCloudEvalAnalyzer(client)
+        return [
+            await analyze_game(
+                session, g,
+                cloud_analyzer=shared_cloud,
+                local_analyzer=local_analyzer,
+            )
+            for g in games
+        ]

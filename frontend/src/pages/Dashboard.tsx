@@ -169,6 +169,12 @@ export function Dashboard() {
         <p className="dash-section-note">
           Your classified Layer A step for every mistake.
         </p>
+        {stepData.length === 0 ? (
+          <p className="muted">
+            Nothing classified yet — start with the{' '}
+            <Link to="/mistakes">queue</Link> and this chart fills in.
+          </p>
+        ) : (
         <div className="chart-wrap">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
@@ -203,6 +209,7 @@ export function Dashboard() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+        )}
       </section>
 
       <p className="dash-more muted">

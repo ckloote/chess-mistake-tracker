@@ -143,12 +143,14 @@ export const ExploreBoard = forwardRef<ExploreHandle, ExploreBoardProps>(
     const goToRef = useRef(goTo)
     goToRef.current = goTo
 
-    function handleUserMove(orig: Key, dest: Key) {
+    function handleUserMove(orig: Key, dest: Key, promotion: PieceSymbol = 'q') {
       const chess = chessRef.current
       let mv
       try {
         // promotion is ignored by chess.js when the move isn't a promotion.
-        mv = chess.move({ from: orig, to: dest, promotion: 'q' })
+        // Board drags auto-queen; playUci passes the engine's actual piece so
+        // clicking an underpromotion line (e.g. e7e8n) plays the right move.
+        mv = chess.move({ from: orig, to: dest, promotion })
       } catch {
         // Shouldn't happen — dests only offers legal moves — but reconcile.
         sync()
@@ -168,7 +170,11 @@ export const ExploreBoard = forwardRef<ExploreHandle, ExploreBoardProps>(
     useImperativeHandle(ref, () => ({
       playUci(uci: string) {
         if (uci.length < 4) return
-        handleUserMove(uci.slice(0, 2) as Key, uci.slice(2, 4) as Key)
+        handleUserMove(
+          uci.slice(0, 2) as Key,
+          uci.slice(2, 4) as Key,
+          (uci[4] as PieceSymbol | undefined) ?? 'q',
+        )
       },
     }))
 

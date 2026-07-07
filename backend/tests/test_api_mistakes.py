@@ -165,3 +165,29 @@ def test_patch_mistake_can_toggle_flags(client, db) -> None:
 def test_patch_mistake_404_when_missing(client) -> None:
     response = client.patch("/api/v1/mistakes/99999", json={"user_notes": "x"})
     assert response.status_code == 404
+
+
+def test_patch_clearing_both_classification_fields_unclassifies(client, db) -> None:
+    """Clearing step AND awareness must reset classified_at so the mistake
+    returns to the unclassified queue (was: timestamp lingered)."""
+    from backend.tests.conftest import make_game, make_mistake, make_user
+
+    user = make_user(db)
+    game = make_game(db, user)
+    m = make_mistake(
+        db, game, ply=5, classified_step=4, classified_awareness="didnt_see_it"
+    )
+    assert m.classified_at is not None
+
+    response = client.patch(
+        f"/api/v1/mistakes/{m.id}",
+        json={"classified_step": None, "classified_awareness": None},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["classified_step"] is None
+    assert data["classified_awareness"] is None
+    assert data["classified_at"] is None
+
+    queue = client.get("/api/v1/mistakes?unclassified_only=true").json()
+    assert any(item["id"] == m.id for item in queue["items"])

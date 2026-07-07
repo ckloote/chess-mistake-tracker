@@ -44,20 +44,22 @@ Full review of docs (README.md, DESIGN.md, IMPLEMENTATION.md), the entire backen
 - **Was:** the settings API wrote `lichess_study_ids` / `study_player_aliases` to the `AppSettings` DB row, but `LichessStudySource.__init__` read them from env-backed `config.Settings` (`lru_cache`d for process lifetime) — PATCH edits changed nothing.
 - **Fix:** the source registry (`backend/app/sources/registry.py`) now holds factories that take the `AppSettings` row; the import route passes `get_app_settings(db)`, so PATCH edits govern the next import with no restart. `LichessStudySource` no longer reads env config at all (env vars seed the DB row on first run only). Study ids are validated at PATCH time (`schemas/settings.py` → 422 on malformed ids), with the constructor check kept as a backstop surfaced as 400 on import. Tests: `test_source_registry.py` (registry wiring, 5 tests) plus PATCH-validation and an env-vs-DB divergence test in `test_api_settings.py`. Docs: DESIGN.md §Settings + §Source Abstractions + Open Question 1, IMPLEMENTATION.md Phase 3, `.env.example`, `config.py` comments.
 
-### Minor bugs / nits
+### Minor bugs / nits — **ALL FIXED 2026-07-07**
 
-| # | Where | Issue |
+| # | Where | Issue → Fix |
 |---|---|---|
-| M1 | `frontend/src/pages/Mistakes.tsx` (game link), `frontend/src/pages/GameDetail.tsx` | Mistakes list links to `/games/{id}#ply={ply}` but GameDetail never reads the hash — dead affordance. Fix: parse `location.hash` into initial `activePly`. |
-| M2 | `backend/app/services/mistake_detection.py:77-102` | Time-pressure clock threshold `max(60s, 10% of initial)` only scales **up**; in 3+0/5+0 blitz, 60s is a third/fifth of the game. Combined with the unconditional `<5s` rule, blitz games over-flag heavily. Consider scaling down for short TCs. |
-| M3 | `backend/app/services/analysis.py:28` | `_TC_RE` requires `N+N`; a bare `"600"` TimeControl silently disables all clock math. |
-| M4 | `backend/app/schemas/games.py` (`ImportRequest.since`) → `lichess_online.py` | Naive datetime → `.timestamp()` interprets as server-local time, not UTC. |
-| M5 | `backend/app/services/analysis.py:174` + `heuristics.py:338` | `analyze_pending` docstring claims a shared httpx client, but the API route passes `cloud_analyzer=None`, so every cloud call constructs and closes its own `httpx.AsyncClient`. |
-| M6 | `frontend/src/api/analysis.ts` (`formatScore`) | Identical-branch ternary (`m > 0 ? \`#${m}\` : \`#${m}\``) — dead code, output happens to be correct. |
-| M7 | `frontend/src/components/ExploreBoard.tsx` (`playUci`) | Always auto-queens; clicking an engine line containing an underpromotion (e.g. `e7e8n`) plays the wrong move. |
-| M8 | `frontend/src/api/analysis.ts` (`useAnalyzePosition`) | Query cache key is `[fen, multipv]` but not `depth` — latent collision if per-request depth is ever passed. |
-| M9 | `backend/app/api/mistakes.py` (`update_mistake`) | Clearing both classification fields to null leaves `classified_at` set — row leaves the unclassified queue carrying no classification. |
-| M10 | `Makefile` (`clean`) | Deletes `data/*.db` (classification data) together with `.venv`. Worth a confirm or a separate `clean-db` target. |
+| M1 | `Mistakes.tsx` / `GameDetail.tsx` | `#ply=` hash was never read → GameDetail now opens at the hashed ply (clamped once positions load). |
+| M2 | `mistake_detection.py` | Low-clock threshold had a 60s floor that over-flagged blitz → now a straight 10% of initial time, scaled both directions (DESIGN.md time-pressure section updated). The `<5s` rule stays — it's explicit in DESIGN.md. |
+| M3 | `analysis.py` | Bare `"600"` TimeControl disabled clock math → `_TC_RE` now accepts a missing increment as `+0`. |
+| M4 | `lichess_online.py` | Naive `since` datetime read as server-local → now treated as UTC. |
+| M5 | `analysis.py` | `analyze_pending` now actually builds one shared `httpx.AsyncClient` when the caller doesn't supply an analyzer, matching its docstring. |
+| M6 | `analysis.ts` (`formatScore`) | Identical-branch ternary collapsed. |
+| M7 | `ExploreBoard.tsx` (`playUci`) | Engine-line clicks now pass the UCI's promotion piece; board drags still auto-queen. |
+| M8 | `analysis.ts` (`useAnalyzePosition`) | `depth` added to the hook + query key so an Infinity-stale shallow result can't serve a deeper request. |
+| M9 | `api/mistakes.py` | Clearing both classification fields now resets `classified_at`, returning the row to the unclassified queue (regression test added). |
+| M10 | `Makefile` | `clean` removes rebuildable artifacts only; the DB moved to a separate `clean-db` target with a typed-"yes" confirmation. |
+
+(Also, from the Phase-12 verification findings: the Dashboard's "Mistake types" chart now shows a "nothing classified yet" hint instead of an empty plot on a fresh database.)
 
 ---
 
@@ -103,8 +105,8 @@ Deviations that are **documented and fine** (no action): Step 4 uses the actual 
 2. ~~B2 (FEN-start parity)~~ **DONE 2026-07-06.**
 3. ~~B4 (settings → study source wiring)~~ **DONE 2026-07-06** — the Phase 12 settings UI can now build on it.
 4. ~~F2 (game refresh)~~ **DONE 2026-07-06.**
-5. ~~B3~~ **DONE 2026-07-07**; ~~Phase 12 UI~~ **DONE 2026-07-07**. Minor bugs (M1–M10) remain opportunistic.
-6. F3 → F4 → F5 as feature work.
+5. ~~B3~~ **DONE 2026-07-07**; ~~Phase 12 UI~~ **DONE 2026-07-07**; ~~minor bugs M1–M10~~ **ALL DONE 2026-07-07**.
+6. F3 → F4 → F5 as feature work — **the only items left from this review**.
 
 ## 7. Verification notes for the next agent
 

@@ -27,17 +27,20 @@ interface AnalyzePositionBody {
 // Disabled until a fen is present and `enabled` is true (explore mode on).
 export function useAnalyzePosition(
   fen: string | null,
-  opts: { multipv?: number; enabled?: boolean } = {},
+  opts: { multipv?: number; depth?: number; enabled?: boolean } = {},
 ) {
-  const { multipv = 3, enabled = true } = opts
+  const { multipv = 3, depth, enabled = true } = opts
   return useQuery({
     enabled: enabled && !!fen,
-    queryKey: ['analysis-position', fen, multipv] as const,
+    // depth belongs in the key: with staleTime Infinity, a shallow cached
+    // result must not be served to a request that asked for a deeper search.
+    queryKey: ['analysis-position', fen, multipv, depth ?? null] as const,
     // Engine eval of a fixed position at a fixed depth is stable enough to
     // treat as fresh for the session — avoids re-querying on remount.
     staleTime: Infinity,
     queryFn: ({ signal }) => {
       const body: AnalyzePositionBody = { fen: fen as string, multipv }
+      if (depth !== undefined) body.depth = depth
       return apiFetch<PositionAnalysis>('/analysis/position', {
         method: 'POST',
         body,
@@ -55,8 +58,7 @@ export function formatScore(
 ): string {
   const sign = pov === 'white' ? 1 : -1
   if (line.mate !== null) {
-    const m = line.mate * sign
-    return m > 0 ? `#${m}` : `#${m}` // chess.js-style "#-3" for getting mated
+    return `#${line.mate * sign}` // negative reads "#-3": getting mated in 3
   }
   if (line.cp !== null) {
     const cp = (line.cp * sign) / 100

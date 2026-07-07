@@ -137,13 +137,16 @@ def update_mistake(
     for key, value in fields.items():
         setattr(mistake, key, value)
 
-    # Stamp classified_at the first time either classification field is set, and
-    # refresh it on subsequent changes too — the UI's notion of "when did I
-    # classify this" should reflect the latest decision.
-    if classification_touched and (
-        mistake.classified_step is not None or mistake.classified_awareness is not None
-    ):
-        mistake.classified_at = datetime.now(tz=timezone.utc)
+    # Stamp classified_at the first time either classification field is set,
+    # and refresh it on subsequent changes — the UI's notion of "when did I
+    # classify this" should reflect the latest decision. Clearing BOTH fields
+    # un-classifies the mistake: classified_at resets too, so the row returns
+    # to the unclassified queue instead of lingering half-classified.
+    if classification_touched:
+        if mistake.classified_step is None and mistake.classified_awareness is None:
+            mistake.classified_at = None
+        else:
+            mistake.classified_at = datetime.now(tz=timezone.utc)
 
     db.commit()
     db.refresh(mistake)

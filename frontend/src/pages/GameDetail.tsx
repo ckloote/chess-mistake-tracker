@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import type { Key } from 'chessground/types'
 import { Chessground, type BoardArrow } from '../components/Chessground'
 import { MoveList } from '../components/MoveList'
@@ -25,18 +25,36 @@ function extractBestUci(mistake: Mistake): string | null {
   return null
 }
 
+// "#ply=12" -> 12. The Mistakes page links here with the mistake's ply in the
+// hash so the review opens at that move.
+function plyFromHash(hash: string): number | null {
+  const digits = /^#ply=(\d+)$/.exec(hash)?.[1]
+  if (!digits) return null
+  const ply = Number.parseInt(digits, 10)
+  return Number.isFinite(ply) && ply >= 0 ? ply : null
+}
+
 export function GameDetail() {
   const { id } = useParams<{ id: string }>()
   const gameId = id ? Number.parseInt(id, 10) : undefined
   const { data: game, isPending, isError, error } = useGame(gameId)
+  const location = useLocation()
 
-  const [activePly, setActivePly] = useState(0)
+  const [activePly, setActivePly] = useState(() => plyFromHash(location.hash) ?? 0)
   const lastPly = (game?.positions.length ?? 1) - 1
 
-  // Reset ply when the game changes.
-  useEffect(() => {
-    setActivePly(0)
-  }, [gameId])
+  // Render-time state adjustments (react.dev "adjusting state when props
+  // change") instead of effects: reset the ply when navigating to a different
+  // game — honoring a #ply= hash — and clamp once positions are known in case
+  // the hash points past the last ply.
+  const [syncedGameId, setSyncedGameId] = useState(gameId)
+  if (gameId !== syncedGameId) {
+    setSyncedGameId(gameId)
+    setActivePly(plyFromHash(location.hash) ?? 0)
+  }
+  if (game && activePly > Math.max(0, game.positions.length - 1)) {
+    setActivePly(Math.max(0, game.positions.length - 1))
+  }
 
   const mistakesByPly = useMemo(() => {
     const map = new Map<number, Mistake>()

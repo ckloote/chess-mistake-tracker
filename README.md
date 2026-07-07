@@ -105,7 +105,8 @@ The daily loop, all reachable from the UI:
 | `make test` | `pytest` (and frontend tests, once present) |
 | `make migrate` | `alembic upgrade head` |
 | `make seed` | Idempotently create the configured user |
-| `make clean` | Remove `.venv`, `node_modules`, and the SQLite DB |
+| `make clean` | Remove rebuildable artifacts (`.venv`, `node_modules`, `frontend/dist`) |
+| `make clean-db` | Delete the SQLite DB — asks for confirmation; classifications are unrecoverable |
 
 All Python invocations go through `uv run` (directly or via `make`); never use bare `pip` or `python` against this project.
 

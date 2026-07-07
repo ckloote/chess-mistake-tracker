@@ -1,4 +1,4 @@
-.PHONY: install dev backend frontend test migrate seed clean
+.PHONY: install dev backend frontend test migrate seed clean clean-db
 
 # Detect whether the frontend has been scaffolded yet (Phase 8).
 HAS_FRONTEND := $(shell test -f frontend/package.json && echo yes)
@@ -41,5 +41,11 @@ migrate:
 seed:
 	uv run python scripts/seed.py
 
+# Rebuildable artifacts only. The database — which holds hand-entered
+# classifications that can't be regenerated — has its own explicit target.
 clean:
-	rm -rf .venv frontend/node_modules data/*.db
+	rm -rf .venv frontend/node_modules frontend/dist
+
+clean-db:
+	@echo "This deletes data/*.db including all your classifications."
+	@read -p "Type 'yes' to confirm: " ans && [ "$$ans" = "yes" ] && rm -f data/*.db || echo "Aborted."

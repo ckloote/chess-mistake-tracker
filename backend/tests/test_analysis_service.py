@@ -312,3 +312,9 @@ async def test_analyze_pending_force_reruns_analyzed_games(
     assert forced[0].skipped is False
     # analyze_game is idempotent — same position count as the first run.
     assert forced[0].positions_created == 8
+
+
+def test_parse_time_control_accepts_bare_seconds() -> None:
+    # Some sources record just the base time, no increment.
+    assert parse_time_control("600") == (600, 0)
+    assert parse_time_control(" 300 ") == (300, 0)

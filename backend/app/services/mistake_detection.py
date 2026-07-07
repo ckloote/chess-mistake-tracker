@@ -95,9 +95,10 @@ def _is_time_pressure(
     if pos.time_spent_ms is not None and pos.time_spent_ms < 5000:
         return True
     if initial_seconds is not None and pos.clock_ms is not None:
-        # Floor at 60s (10+0-style games) so very long classical doesn't trigger
-        # spuriously, ceiling at 10% of initial for longer time controls.
-        threshold_ms = max(60_000, int(initial_seconds * 1000 * 0.1))
+        # Low-clock threshold: 10% of the starting time (60s for a 10+0 game),
+        # scaled in BOTH directions. The old max(60s, …) floor meant a third
+        # of every 3+0 blitz game counted as "time pressure".
+        threshold_ms = int(initial_seconds * 1000 * 0.1)
         if pos.clock_ms < threshold_ms:
             return True
     if (

@@ -125,6 +125,10 @@ class LichessOnlineSource:
         if limit is not None:
             params["max"] = limit
         if since is not None:
+            # A naive datetime is taken as UTC — .timestamp() alone would
+            # interpret it in the server's local zone.
+            if since.tzinfo is None:
+                since = since.replace(tzinfo=timezone.utc)
             params["since"] = int(since.timestamp() * 1000)
 
         url = f"{LICHESS_API_BASE}/api/games/user/{user.lichess_username}"

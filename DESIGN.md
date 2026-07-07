@@ -218,7 +218,7 @@ wholesale — reconciliation applies to `Mistake` rows only.)
 
 For each user move, compute `time_spent_ms` from the clock deltas in the PGN. Flag the move as time-pressure-influenced if any of:
 - `time_spent_ms < 5000` (under 5 seconds in any time control)
-- `clock_ms < 60000` for 10+0-style games, scaled appropriately for longer time controls
+- `clock_ms` below 10% of the starting time — 60s for a 10+0 game, scaled in *both* directions (an earlier 60s floor made a third of every 3+0 blitz game count as time pressure)
 - The move was at least 3× faster than the user's median move time in that game
 
 These thresholds are configurable.
@@ -485,8 +485,11 @@ migrate:
 seed:
 	uv run python scripts/seed.py
 
-clean:
-	rm -rf .venv frontend/node_modules data/*.db
+clean:            # rebuildable artifacts only
+	rm -rf .venv frontend/node_modules frontend/dist
+
+clean-db:         # separate + confirmed: the DB holds unregenerable classifications
+	rm -f data/*.db
 ```
 
 ### Production-style local serve
