@@ -42,11 +42,10 @@ Full review of docs (README.md, DESIGN.md, IMPLEMENTATION.md), the entire backen
 - **Concrete failure:** a black user delivering mate annotated `#-0` sees winrate 97.5 → 2.5 on their own mating move → flagged as a blunder. Suppression rules don't catch it. Low frequency (Lichess usually omits eval on the mating move; the Step-4 `delivers_mate` special case in heuristics already fires from the board), but wrong-direction when it hits.
 - **Suggested fix:** when `mate_in == 0`, the side to move in that position's FEN is the *mated* side — derive the winner from the FEN rather than assuming white. Requires threading the FEN (or the mated color) into `_white_winrate` callers; all call sites have the Position row in hand.
 
-### B4 — `PATCH /settings` study IDs / aliases are dead controls (MEDIUM)
+### B4 — `PATCH /settings` study IDs / aliases are dead controls — **FIXED 2026-07-06**
 
-- **Where:** `backend/app/api/settings.py` writes `lichess_study_ids` / `study_player_aliases` to the `AppSettings` DB row, but `LichessStudySource.__init__` (`backend/app/sources/lichess_study.py:146-148`) reads them from env-backed `config.Settings` (`get_settings()`, which is `lru_cache`d for process lifetime). Nothing reads the DB values for ingestion (verified by grep).
-- **Impact:** editing these via the API changes nothing. When Phase 12 wires up the settings page it will look functional and be ignored.
-- **Suggested fix:** have `get_source("lichess_study")` (or the import route) resolve study IDs/aliases from `get_app_settings(session)`, falling back to env for bootstrap. Or drop the fields from the PATCH surface until then.
+- **Was:** the settings API wrote `lichess_study_ids` / `study_player_aliases` to the `AppSettings` DB row, but `LichessStudySource.__init__` read them from env-backed `config.Settings` (`lru_cache`d for process lifetime) — PATCH edits changed nothing.
+- **Fix:** the source registry (`backend/app/sources/registry.py`) now holds factories that take the `AppSettings` row; the import route passes `get_app_settings(db)`, so PATCH edits govern the next import with no restart. `LichessStudySource` no longer reads env config at all (env vars seed the DB row on first run only). Study ids are validated at PATCH time (`schemas/settings.py` → 422 on malformed ids), with the constructor check kept as a backstop surfaced as 400 on import. Tests: `test_source_registry.py` (registry wiring, 5 tests) plus PATCH-validation and an env-vs-DB divergence test in `test_api_settings.py`. Docs: DESIGN.md §Settings + §Source Abstractions + Open Question 1, IMPLEMENTATION.md Phase 3, `.env.example`, `config.py` comments.
 
 ### Minor bugs / nits
 
@@ -105,7 +104,7 @@ Deviations that are **documented and fine** (no action): Step 4 uses the actual 
 
 1. ~~B1 / F1 (classification-preserving re-analysis)~~ **DONE 2026-07-06.**
 2. ~~B2 (FEN-start parity)~~ **DONE 2026-07-06.**
-3. B4 (settings → study source wiring), then the Phase 12 settings UI on top.
+3. ~~B4 (settings → study source wiring)~~ **DONE 2026-07-06** — the Phase 12 settings UI can now build on it.
 4. F2 (game refresh), unblocking the has_evals workflow.
 5. B3 + minor bugs opportunistically alongside the above.
 6. F3 → F4 → F5 as feature work.

@@ -18,6 +18,7 @@ from backend.app.schemas.games import (
 )
 from backend.app.schemas.mistakes import GameDetailOut
 from backend.app.services.analysis import AnalysisResult, analyze_game, analyze_pending
+from backend.app.services.app_settings import get_app_settings
 from backend.app.services.ingestion import ingest
 from backend.app.services.local_engine import maybe_local_engine
 from backend.app.sources.registry import get_source, known_sources
@@ -71,12 +72,18 @@ async def import_games(
     settings: Settings = Depends(get_settings),
 ) -> ImportResponse:
     try:
-        source = get_source(payload.source)
+        # Sources are built from the AppSettings row so PATCH /settings edits
+        # (study IDs, aliases) take effect without a restart.
+        source = get_source(payload.source, get_app_settings(db))
     except KeyError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unknown source {payload.source!r}. Known: {known_sources()}",
         )
+    except ValueError as e:
+        # Stored settings invalid for this source (e.g. a malformed study id
+        # written before PATCH-time validation existed).
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     user = _get_configured_user(db, settings)
     result = await ingest(db, user, source, since=payload.since, limit=payload.limit)

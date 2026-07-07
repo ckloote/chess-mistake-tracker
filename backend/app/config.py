@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     lichess_username: str = ""
     # NoDecode skips pydantic-settings' default JSON decode of complex env types,
     # so the comma-separated string falls through to the validator below.
+    # NOTE: study ids and aliases here only SEED the AppSettings DB row on
+    # first run. After that the DB governs (PATCH /settings edits it) and
+    # these env values are never consulted again.
     lichess_study_ids: Annotated[list[str], NoDecode] = Field(default_factory=list)
     # Alternative player names to treat as the configured user when matching
     # study chapter [White]/[Black] tags — primarily for OTB studies where the

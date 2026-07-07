@@ -5,7 +5,7 @@ import pytest
 from backend.app.sources.lichess_study import (
     _extract_chapter_id,
     _resolve_user_color,
-    _validate_study_id,
+    validate_study_id,
     parse_study_pgn,
 )
 
@@ -33,14 +33,14 @@ def test_extract_chapter_id_returns_none_on_unrelated_url() -> None:
 
 
 def test_validate_study_id_rejects_garbage() -> None:
-    _validate_study_id("STUDYone")
-    _validate_study_id("aBcD1234")
+    validate_study_id("STUDYone")
+    validate_study_id("aBcD1234")
     with pytest.raises(ValueError):
-        _validate_study_id("too-short")
+        validate_study_id("too-short")
     with pytest.raises(ValueError):
-        _validate_study_id("contains/slash")
+        validate_study_id("contains/slash")
     with pytest.raises(ValueError):
-        _validate_study_id("")
+        validate_study_id("")
 
 
 def test_parse_study_picks_up_chapters_user_played(study_pgn: str) -> None:

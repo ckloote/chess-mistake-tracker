@@ -5,6 +5,12 @@ position). For each configured study ID, we fetch the multi-game PGN, parse
 each chapter as a python-chess Game, and emit one GameRecord per chapter
 where the configured user is White or Black.
 
+Study IDs and player aliases come from the **AppSettings DB row** — the
+registry passes them in, and PATCH /settings edits them. The
+LICHESS_STUDY_IDS / STUDY_PLAYER_ALIASES env vars only seed that row on first
+run; they are deliberately not read here, so a stale env value can't shadow
+the DB.
+
 Chapters where the user isn't a player (e.g. analysis of a pro game) are
 silently skipped — that's the MVP behavior in DESIGN.md §"Open Questions".
 """
@@ -20,7 +26,6 @@ from urllib.parse import urlsplit
 import chess.pgn
 import httpx
 
-from backend.app.config import get_settings
 from backend.app.models import User
 from backend.app.sources.base import GameRecord
 from backend.app.sources.lichess_online import (
@@ -125,7 +130,11 @@ def parse_study_pgn(
 _STUDY_ID_RE = re.compile(r"^[A-Za-z0-9]{8}$")
 
 
-def _validate_study_id(study_id: str) -> None:
+def validate_study_id(study_id: str) -> None:
+    """Raise ValueError unless `study_id` looks like a Lichess study id.
+    Public because PATCH /settings validates ids at write time with the same
+    rule (schemas/settings.py); the constructor check below is the backstop
+    for rows written before that validation existed."""
     if not _STUDY_ID_RE.match(study_id):
         raise ValueError(
             f"Invalid Lichess study id {study_id!r}: expected 8 alphanumeric chars."
@@ -141,13 +150,10 @@ class LichessStudySource:
         aliases: list[str] | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
-        settings = get_settings()
-        if study_ids is None:
-            study_ids = list(settings.lichess_study_ids)
-        if aliases is None:
-            aliases = list(settings.study_player_aliases)
+        study_ids = list(study_ids or [])
+        aliases = list(aliases or [])
         for sid in study_ids:
-            _validate_study_id(sid)
+            validate_study_id(sid)
         self._study_ids = study_ids
         self._aliases = aliases
         self._client = client
@@ -160,7 +166,8 @@ class LichessStudySource:
     ) -> AsyncIterator[GameRecord]:
         if not self._study_ids:
             log.warning(
-                "LichessStudySource has no study ids configured; LICHESS_STUDY_IDS is empty."
+                "LichessStudySource has no study ids configured; add some via "
+                "PATCH /settings (lichess_study_ids)."
             )
             return
 

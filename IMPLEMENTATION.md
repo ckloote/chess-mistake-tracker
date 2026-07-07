@@ -110,7 +110,7 @@ chess-mistake-tracker/
 **Goal.** Pull configured Lichess studies and treat each chapter where the user is a player as a game.
 
 **Deliverables.**
-- `backend/app/sources/lichess_study.py`. Reads study IDs from config. For each: hits `https://lichess.org/api/study/{id}.pgn`, splits multi-game PGN, filters to chapters where user is white or black (matched by configured Lichess username, case-insensitive). Composes `source_game_id` as `{studyId}:{chapterId}`, where `chapterId` is the stable 8-char identifier from the chapter's `[Site "https://lichess.org/study/{studyId}/{chapterId}"]` header. (DESIGN.md uses chapterId; using a positional index would re-import duplicates whenever chapters are reordered.)
+- `backend/app/sources/lichess_study.py`. Reads study IDs from the `AppSettings` row via the source registry (env only seeds that row on first run; fixed 2026-07-06 — originally read env config directly, which made `PATCH /settings` edits dead). For each: hits `https://lichess.org/api/study/{id}.pgn`, splits multi-game PGN, filters to chapters where user is white or black (matched by configured Lichess username, case-insensitive). Composes `source_game_id` as `{studyId}:{chapterId}`, where `chapterId` is the stable 8-char identifier from the chapter's `[Site "https://lichess.org/study/{studyId}/{chapterId}"]` header. (DESIGN.md uses chapterId; using a positional index would re-import duplicates whenever chapters are reordered.)
 - Extend ingestion service to dispatch to the right source by name.
 - `POST /api/v1/games/import` accepts `source="lichess_study"`.
 - Test with a sample multi-chapter study PGN string (vendored in `tests/fixtures/`).
