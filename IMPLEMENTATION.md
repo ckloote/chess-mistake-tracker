@@ -280,9 +280,19 @@ chess-mistake-tracker/
 
 ---
 
-## Phase 12: Polish, settings, docs
+## Phase 12: Polish, settings, docs — **DONE 2026-07-07**
 
 **Goal.** Ready for daily use.
+
+*As-built notes:* Lichess username is displayed read-only on the settings page
+rather than editable — changing it implies re-seeding the DB, which has no MVP
+UI (decision documented in `api/settings.py`). The Games page gained the
+import / analyze-pending controls plus per-row Refresh + "Request ↗" deep link
+for `has_evals=false` games (backed by `POST /games/{id}/refresh`). The
+"Re-analyze all" button surfaces the reconcile counters and is safe by
+construction (classification-preserving re-analysis). FastAPI serves
+`frontend/dist/` at `/` when it exists (production-style single-process serve,
+with SPA fallback). HOWTO.md documents the classification system.
 
 **Deliverables.**
 - Settings page wired to backend `GET/PATCH /settings`. Editable: Lichess username, study IDs, win% thresholds for inaccuracy/mistake/blunder, suppression bounds (the 30/90 defaults).

@@ -1,6 +1,15 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useUrlState } from '../hooks/useUrlState'
-import { useGamesList, type GameFilters } from '../api/games'
+import {
+  useAnalyzeGame,
+  useAnalyzePending,
+  useGamesList,
+  useImportGames,
+  useRefreshGame,
+  type Game,
+  type GameFilters,
+} from '../api/games'
 
 const FILTER_DEFAULTS = {
   source: '',
@@ -46,10 +55,43 @@ function gameStatus(g: { has_evals: boolean; analyzed_at: string | null }): Game
   return { label: 'Needs Lichess analysis', className: 'needs' }
 }
 
+// Link to the game at its source — for online games this is also where the
+// user clicks "Request computer analysis" before refreshing.
+function lichessUrl(g: Game): string {
+  if (g.source === 'lichess_study') {
+    const [studyId, chapterId] = g.source_game_id.split(':')
+    return `https://lichess.org/study/${studyId}/${chapterId ?? ''}`
+  }
+  return `https://lichess.org/${g.source_game_id}`
+}
+
 export function Games() {
   const [filters, setFilters] = useUrlState<FilterKey>(FILTER_DEFAULTS)
   const apiFilters = toApiFilters(filters)
   const query = useGamesList(apiFilters)
+
+  const importGames = useImportGames()
+  const analyzePending = useAnalyzePending()
+  const analyzeGame = useAnalyzeGame()
+  const refreshGame = useRefreshGame()
+
+  const [importSource, setImportSource] = useState('lichess_online')
+  const [importMax, setImportMax] = useState('30')
+
+  function runImport() {
+    const limit = Number.parseInt(importMax, 10)
+    importGames.mutate({
+      source: importSource,
+      // Studies have no meaningful limit; only send one for online games.
+      ...(importSource === 'lichess_online' && Number.isFinite(limit) && limit > 0
+        ? { limit }
+        : {}),
+    })
+  }
+
+  // Collect the first action error for the shared error line below the bar.
+  const actionError =
+    importGames.error ?? analyzePending.error ?? analyzeGame.error ?? refreshGame.error
 
   const total = query.data?.total ?? 0
   const items = query.data?.items ?? []
@@ -69,6 +111,62 @@ export function Games() {
             : `${total} ${total === 1 ? 'game' : 'games'}`}
         </span>
       </div>
+
+      <div className="games-actions">
+        <div className="filter-group">
+          <label htmlFor="i-source">Import from</label>
+          <select
+            id="i-source"
+            value={importSource}
+            onChange={(e) => setImportSource(e.target.value)}
+          >
+            <option value="lichess_online">Lichess games</option>
+            <option value="lichess_study">Lichess studies</option>
+          </select>
+        </div>
+        {importSource === 'lichess_online' && (
+          <div className="filter-group">
+            <label htmlFor="i-max">Max games</label>
+            <input
+              id="i-max"
+              type="number"
+              min={1}
+              max={500}
+              value={importMax}
+              onChange={(e) => setImportMax(e.target.value)}
+            />
+          </div>
+        )}
+        <button type="button" onClick={runImport} disabled={importGames.isPending}>
+          {importGames.isPending ? 'Importing…' : 'Import'}
+        </button>
+        <button
+          type="button"
+          onClick={() => analyzePending.mutate({})}
+          disabled={analyzePending.isPending}
+          title="Analyze every imported game that has evals but hasn't been analyzed yet"
+        >
+          {analyzePending.isPending ? 'Analyzing…' : 'Analyze pending'}
+        </button>
+        {importGames.isSuccess && !importGames.isPending && (
+          <span className="games-action-result">
+            imported {importGames.data.imported}, skipped {importGames.data.skipped}
+          </span>
+        )}
+        {analyzePending.isSuccess && !analyzePending.isPending && (
+          <span className="games-action-result">
+            analyzed {analyzePending.data.analyzed}
+            {analyzePending.data.skipped > 0
+              ? `, skipped ${analyzePending.data.skipped}`
+              : ''}
+          </span>
+        )}
+      </div>
+      {actionError != null && (
+        <div className="error" style={{ marginBottom: 16 }}>
+          {String(actionError)}
+        </div>
+      )}
 
       <div className="filters">
         <div className="filter-group">
@@ -167,8 +265,7 @@ export function Games() {
                 }}
                 className="muted"
               >
-                Import some via{' '}
-                <code>POST /api/v1/games/import</code>.
+                Use the Import controls above to pull your games from Lichess.
               </p>
             </div>
           ) : (
@@ -182,6 +279,7 @@ export function Games() {
                   <th>You</th>
                   <th>Source</th>
                   <th>Status</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -215,6 +313,48 @@ export function Games() {
                         <span className={`status-pill ${status.className}`}>
                           {status.label}
                         </span>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        {status.className === 'pending' && (
+                          <button
+                            type="button"
+                            className="row-action"
+                            onClick={() => analyzeGame.mutate(g.id)}
+                            disabled={
+                              analyzeGame.isPending && analyzeGame.variables === g.id
+                            }
+                          >
+                            {analyzeGame.isPending && analyzeGame.variables === g.id
+                              ? 'Analyzing…'
+                              : 'Analyze'}
+                          </button>
+                        )}
+                        {status.className === 'needs' && (
+                          <>
+                            <a
+                              className="row-link"
+                              href={lichessUrl(g)}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Open on Lichess and click 'Request a computer analysis', then Refresh here"
+                            >
+                              Request&nbsp;↗
+                            </a>
+                            <button
+                              type="button"
+                              className="row-action"
+                              onClick={() => refreshGame.mutate(g.id)}
+                              disabled={
+                                refreshGame.isPending && refreshGame.variables === g.id
+                              }
+                              title="Re-fetch this game from Lichess to pick up analysis"
+                            >
+                              {refreshGame.isPending && refreshGame.variables === g.id
+                                ? 'Refreshing…'
+                                : 'Refresh'}
+                            </button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   )

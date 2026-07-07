@@ -47,9 +47,11 @@ API-first. Backend is the source of truth and exposes a documented HTTP API. The
 
 ## Project Status
 
-Planning. See:
+Built and in daily use (Phases 1–12 of the implementation plan complete; Docker packaging is the only optional phase remaining). See:
 - [DESIGN.md](./DESIGN.md) — architecture, data model, classification logic, heuristics
-- [IMPLEMENTATION.md](./IMPLEMENTATION.md) — phased build plan for Claude Code
+- [IMPLEMENTATION.md](./IMPLEMENTATION.md) — phased build plan (history + backlog)
+- [HOWTO.md](./HOWTO.md) — how to use the classification system day to day
+- [CODE_REVIEW.md](./CODE_REVIEW.md) — 2026-07-06 review findings and their status
 
 ## Setup
 
@@ -72,13 +74,26 @@ cd chess-mistake-tracker
 cp .env.example .env          # then edit .env: set LICHESS_USERNAME at minimum
 nvm use                       # or: fnm use   — reads .nvmrc (Node 20)
 
-make install                  # creates ./.venv via `uv sync`; npm ci once frontend exists
+make install                  # creates ./.venv via `uv sync`; npm ci for the frontend
 make migrate                  # applies Alembic migrations → ./data/chess.db
 make seed                     # creates the single user from LICHESS_USERNAME (idempotent)
-make dev                      # runs the backend (and frontend, once Phase 8 lands)
+make dev                      # runs backend (:8000) and frontend (:5173) together
 ```
 
-The backend serves on <http://localhost:8000>. Health check: `curl localhost:8000/health`. OpenAPI docs: <http://localhost:8000/docs>.
+The app is at <http://localhost:5173>; the backend serves on <http://localhost:8000>. Health check: `curl localhost:8000/health`. OpenAPI docs: <http://localhost:8000/docs>.
+
+Optional: install [Stockfish](https://stockfishchess.org/) (`apt install stockfish`, or set `STOCKFISH_PATH`) to enable the interactive Explore board and higher-quality best-move suggestions. Without it those features degrade gracefully (cloud-eval fallback / hidden panel).
+
+## Using the app
+
+The daily loop, all reachable from the UI:
+
+1. **Import** — on the *Games* page pick "Lichess games" (with a max) or "Lichess studies" and click Import. Study IDs and the player aliases used to match your name in OTB chapters are edited on the *Settings* page (the `LICHESS_STUDY_IDS` / `STUDY_PLAYER_ALIASES` env vars only seed them on first run). Re-importing is idempotent — existing games are skipped, never overwritten.
+2. **Analyze** — "Analyze pending" processes every imported game whose PGN carries `%eval` annotations: positions, mistake detection, and a suggested thinking-step per mistake.
+3. **Games without evals** show a *Needs Lichess analysis* status: click *Request ↗* to open the game on Lichess and request computer analysis there, then click *Refresh* to re-fetch it — the game becomes analyzable.
+4. **Classify** — the *Mistakes* page is the queue. Each mistake gets a thinking step (1–4), an awareness call (*Got it wrong* / *Didn't see it*), optional tags and notes. Keyboard-first: `1–4`, `G`/`D`, `Enter` to save-and-advance. See [HOWTO.md](./HOWTO.md) for what the buckets mean.
+5. **Review patterns** — the *Dashboard* and *Stats* pages show where your mistakes cluster and what to train first.
+6. **Tune** — detection thresholds and suppression bounds live on the *Settings* page. After changing them, use the offered "Re-analyze all games" — classifications and notes always survive re-analysis.
 
 ### Common commands
 
@@ -93,3 +108,12 @@ The backend serves on <http://localhost:8000>. Health check: `curl localhost:800
 | `make clean` | Remove `.venv`, `node_modules`, and the SQLite DB |
 
 All Python invocations go through `uv run` (directly or via `make`); never use bare `pip` or `python` against this project.
+
+### Production-style serve (single process)
+
+```bash
+cd frontend && npm run build     # static assets → frontend/dist/
+make backend                     # FastAPI now also serves the UI at :8000
+```
+
+When `frontend/dist/` exists, the backend serves the built app at <http://localhost:8000> — one process, one port. `make dev` (Vite + hot reload) remains the development workflow.

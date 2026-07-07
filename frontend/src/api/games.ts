@@ -1,8 +1,8 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch, toQuery } from './client'
 
 // Mirrors backend/app/schemas/games.GameOut. Kept hand-typed for now —
-// switching to generation from /openapi.json is a Phase-12 polish task.
+// switching to generation from /openapi.json is a possible later polish task.
 export interface Game {
   id: number
   source: string
@@ -98,5 +98,91 @@ export function useGame(id: number | undefined) {
     enabled: id !== undefined && Number.isFinite(id),
     queryKey: ['game', id] as const,
     queryFn: ({ signal }) => apiFetch<GameDetail>(`/games/${id}`, { signal }),
+  })
+}
+
+// ---- Actions: import / analyze / refresh -----------------------------------
+
+export interface ImportResult {
+  source: string
+  imported: number
+  skipped: number
+  total_in_db: number
+}
+
+export interface AnalyzeResult {
+  game_id: number
+  positions_created: number
+  mistakes_detected: number
+  skipped: boolean
+  reason: string | null
+  mistakes_new: number
+  mistakes_updated: number
+  mistakes_removed: number
+  mistakes_preserved: number
+}
+
+export interface AnalyzePendingResult {
+  analyzed: number
+  skipped: number
+  results: AnalyzeResult[]
+}
+
+export interface RefreshResult {
+  game_id: number
+  pgn_changed: boolean
+  had_evals_before: boolean
+  has_evals: boolean
+}
+
+// Every action below changes game/mistake/stats data, so invalidate broadly —
+// this is a local single-user app and refetches are cheap.
+function useInvalidateGameData() {
+  const qc = useQueryClient()
+  return () => {
+    qc.invalidateQueries({ queryKey: ['games'] })
+    qc.invalidateQueries({ queryKey: ['game'] })
+    qc.invalidateQueries({ queryKey: ['mistakes'] })
+    qc.invalidateQueries({ queryKey: ['stats'] })
+  }
+}
+
+export function useImportGames() {
+  const invalidate = useInvalidateGameData()
+  return useMutation({
+    mutationFn: (body: { source: string; limit?: number }) =>
+      apiFetch<ImportResult>('/games/import', { method: 'POST', body }),
+    onSuccess: invalidate,
+  })
+}
+
+export function useAnalyzePending() {
+  const invalidate = useInvalidateGameData()
+  return useMutation({
+    // force=true re-runs already-analyzed games (classification-preserving).
+    mutationFn: ({ force = false }: { force?: boolean } = {}) =>
+      apiFetch<AnalyzePendingResult>(
+        `/games/analyze-pending${force ? '?force=true' : ''}`,
+        { method: 'POST' },
+      ),
+    onSuccess: invalidate,
+  })
+}
+
+export function useAnalyzeGame() {
+  const invalidate = useInvalidateGameData()
+  return useMutation({
+    mutationFn: (gameId: number) =>
+      apiFetch<AnalyzeResult>(`/games/${gameId}/analyze`, { method: 'POST' }),
+    onSuccess: invalidate,
+  })
+}
+
+export function useRefreshGame() {
+  const invalidate = useInvalidateGameData()
+  return useMutation({
+    mutationFn: (gameId: number) =>
+      apiFetch<RefreshResult>(`/games/${gameId}/refresh`, { method: 'POST' }),
+    onSuccess: invalidate,
   })
 }

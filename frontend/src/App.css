@@ -2119,3 +2119,116 @@ table.games-table tbody tr:hover {
     gap: 8px;
   }
 }
+
+/* ---- Settings page ------------------------------------------------------ */
+
+.settings-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px 28px;
+}
+
+.settings-grid .filter-group {
+  min-width: 170px;
+}
+
+.settings-grid-wide .filter-group {
+  flex: 1 1 320px;
+}
+
+.settings-hint {
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+}
+
+.settings-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+  padding: 14px 18px;
+  border: 1px solid var(--ink-rust);
+  border-left-width: 4px;
+  background: rgba(177, 87, 30, 0.07);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+}
+
+.settings-banner-action {
+  white-space: nowrap;
+}
+
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 8px 0 28px;
+}
+
+.settings-actions .settings-save {
+  background: var(--ink-azure);
+  color: #faf4e6;
+  border-color: var(--ink-azure-deep);
+}
+
+.settings-actions .settings-save:hover:not(:disabled) {
+  background: var(--ink-azure-deep);
+}
+
+.settings-actions .settings-save:disabled {
+  opacity: 0.55;
+}
+
+.settings-result {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--ink-muted);
+  margin-top: 10px;
+}
+
+.settings-inline-error {
+  padding: 4px 10px;
+  font-size: 0.82rem;
+}
+
+/* ---- Games page actions -------------------------------------------------- */
+
+.games-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.games-actions .filter-group {
+  min-width: 140px;
+}
+
+.games-action-result {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.row-action {
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.row-action + .row-action,
+.row-action + .row-link,
+.row-link + .row-action {
+  margin-left: 6px;
+}
+
+.row-link {
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}

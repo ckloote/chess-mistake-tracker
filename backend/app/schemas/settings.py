@@ -6,6 +6,10 @@ from backend.app.sources.lichess_study import validate_study_id
 class SettingsOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    # Read-only context for the settings page: the boot-time username from the
+    # env (changing it implies re-seeding, so there's no PATCH for it).
+    lichess_username: str = ""
+
     winrate_inaccuracy: float
     winrate_mistake: float
     winrate_blunder: float
