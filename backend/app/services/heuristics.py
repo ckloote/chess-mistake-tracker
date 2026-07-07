@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 from backend.app.analyzers.base import Analyzer, EvalResult
 from backend.app.analyzers.lichess_cloud import LichessCloudEvalAnalyzer
 from backend.app.chess_utils.see import static_exchange_eval
-from backend.app.chess_utils.winrate import MATE_CP_EQUIVALENT
+from backend.app.chess_utils.winrate import MATE_CP_EQUIVALENT, mate_zero_white_view_cp
 from backend.app.models import Game, Mistake, Position
 
 # Confidence values per DESIGN.md §"Layer A Heuristic Suggestion".
@@ -48,10 +48,23 @@ STEP2_THREAT_SEE = 200
 BEST_MOVE_MULTIPV = 3
 
 
-def _user_view_cp(eval_cp: int | None, mate_in: int | None, user_color: str) -> int | None:
-    """Collapse (cp, mate_in) into a single cp value from the user's view."""
+def _user_view_cp(
+    eval_cp: int | None,
+    mate_in: int | None,
+    user_color: str,
+    fen: str | None = None,
+) -> int | None:
+    """Collapse (cp, mate_in) into a single cp value from the user's view.
+    `fen` disambiguates a delivered mate (mate_in == 0, sign lost in parsing) —
+    without it, mate-0 used to read as −1000 here while winrate.py read it as
+    +1000; both now defer to the FEN's side-to-move."""
     if mate_in is not None:
-        cp = MATE_CP_EQUIVALENT if mate_in > 0 else -MATE_CP_EQUIVALENT
+        if mate_in > 0:
+            cp = MATE_CP_EQUIVALENT
+        elif mate_in < 0:
+            cp = -MATE_CP_EQUIVALENT
+        else:
+            cp = mate_zero_white_view_cp(fen)
     elif eval_cp is not None:
         cp = eval_cp
     else:
@@ -157,8 +170,8 @@ def _step4(
                 "forcing": True,
                 "delivers_mate": True,
             }
-    cp_after_user = _user_view_cp(pos.eval_cp, pos.mate_in, user_color)
-    cp_after_opp = _user_view_cp(nxt.eval_cp, nxt.mate_in, user_color)
+    cp_after_user = _user_view_cp(pos.eval_cp, pos.mate_in, user_color, fen=pos.fen)
+    cp_after_opp = _user_view_cp(nxt.eval_cp, nxt.mate_in, user_color, fen=nxt.fen)
     if cp_after_user is None or cp_after_opp is None:
         return False, {"opp_response_uci": nxt.uci, "forcing": True, "cp_drop": None}
     cp_drop = cp_after_user - cp_after_opp

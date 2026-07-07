@@ -213,6 +213,51 @@ async def test_blunder_mistake_has_endgame_flag_false_in_opening(db_session: Ses
     assert m.endgame_flag is False  # 6 plies in, all material on board
 
 
+# ---- Delivered mate with "#-0" eval: winner credited from the FEN ----------
+
+# Fool's mate: the configured user (black) DELIVERS checkmate. The "#-0"
+# annotation on Qh4# parses to mate_in == 0 with the sign lost; before the
+# B3 fix that read as "white wins", so black's mating move registered a
+# ~95-point winrate drop and was flagged as a blunder.
+FOOLS_MATE_PGN = """\
+[Event "Test"]
+[Site "https://lichess.org/fool0001"]
+[White "alice"]
+[Black "configured_user"]
+[Result "0-1"]
+[TimeControl "300+0"]
+
+1. f3 { [%eval -0.8] [%clk 0:05:00] } e5 { [%eval -0.9] [%clk 0:05:00] }
+2. g4 { [%eval #-1] [%clk 0:04:55] } Qh4# { [%eval #-0] [%clk 0:04:58] } 0-1
+"""
+
+
+async def test_delivering_mate_is_not_a_blunder(db_session: Session) -> None:
+    game = _make_game(db_session, FOOLS_MATE_PGN, "black", "fool0001")
+    result = await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+    plies = {
+        m.ply for m in db_session.scalars(select(Mistake).where(Mistake.game_id == game.id))
+    }
+    assert 4 not in plies  # 2...Qh4# is a winning move, not a mistake
+    assert result.mistakes_detected == 0
+
+
+async def test_getting_mated_is_the_movers_blunder(db_session: Session) -> None:
+    """Same game from white's side: 2. g4?? is the blunder (eval #-1 after),
+    and the mate-0 position on ply 4 must read as ~0% for white."""
+    pgn = FOOLS_MATE_PGN.replace(
+        '[White "alice"]\n[Black "configured_user"]',
+        '[White "configured_user"]\n[Black "alice"]',
+    )
+    game = _make_game(db_session, pgn, "white", "fool0002")
+    await analyze_game(db_session, game, cloud_analyzer=_NoOpCloud())
+    mistakes = db_session.scalars(select(Mistake).where(Mistake.game_id == game.id)).all()
+    by_ply = {m.ply: m for m in mistakes}
+    assert 3 in by_ply  # 2. g4??
+    assert by_ply[3].severity == "blunder"
+    assert by_ply[3].suggested_step == 4  # hung mate -> failed blunder check
+
+
 # ---- Custom-[FEN] starts: mistakes land on the right player's plies --------
 
 # Position after 1. e4 e5 2. Qh5 — black to move, so the chapter's ply 1 is a

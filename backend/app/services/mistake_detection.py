@@ -66,16 +66,19 @@ def _is_suppressed(
     return False
 
 
-def _eval_cp_for_storage(eval_cp: int | None, mate_in: int | None) -> int | None:
+def _eval_cp_for_storage(
+    eval_cp: int | None, mate_in: int | None, fen: str | None = None
+) -> int | None:
     """Pick a representative cp value to store on the Mistake row. If the
     position is a mate score we collapse it to ±MATE_CP_EQUIVALENT so downstream
-    consumers don't need to special-case mate_in."""
+    consumers don't need to special-case mate_in. `fen` disambiguates a
+    delivered mate (mate_in == 0), whose sign is lost in parsing."""
     if mate_in is not None:
         if mate_in > 0:
             return winrate.MATE_CP_EQUIVALENT
         if mate_in < 0:
             return -winrate.MATE_CP_EQUIVALENT
-        return winrate.MATE_CP_EQUIVALENT
+        return winrate.mate_zero_white_view_cp(fen)
     return eval_cp
 
 
@@ -183,8 +186,12 @@ def detect_mistakes(session: Session, game: Game) -> DetectionResult:
         if prev is None:
             continue
 
-        wr_before = winrate.winrate_for_color(prev.eval_cp, prev.mate_in, game.user_color)
-        wr_after = winrate.winrate_for_color(pos.eval_cp, pos.mate_in, game.user_color)
+        wr_before = winrate.winrate_for_color(
+            prev.eval_cp, prev.mate_in, game.user_color, fen=prev.fen
+        )
+        wr_after = winrate.winrate_for_color(
+            pos.eval_cp, pos.mate_in, game.user_color, fen=pos.fen
+        )
         drop = winrate.winrate_drop(wr_before, wr_after)
         if drop is None or drop <= 0:
             continue
@@ -208,8 +215,8 @@ def detect_mistakes(session: Session, game: Game) -> DetectionResult:
                 game_id=game.id,
                 ply=pos.ply,
                 severity=severity,
-                eval_before_cp=_eval_cp_for_storage(prev.eval_cp, prev.mate_in),
-                eval_after_cp=_eval_cp_for_storage(pos.eval_cp, pos.mate_in),
+                eval_before_cp=_eval_cp_for_storage(prev.eval_cp, prev.mate_in, prev.fen),
+                eval_after_cp=_eval_cp_for_storage(pos.eval_cp, pos.mate_in, pos.fen),
                 winrate_before=wr_before,
                 winrate_after=wr_after,
                 winrate_drop=drop,
@@ -221,8 +228,8 @@ def detect_mistakes(session: Session, game: Game) -> DetectionResult:
             new += 1
         else:
             mistake.severity = severity
-            mistake.eval_before_cp = _eval_cp_for_storage(prev.eval_cp, prev.mate_in)
-            mistake.eval_after_cp = _eval_cp_for_storage(pos.eval_cp, pos.mate_in)
+            mistake.eval_before_cp = _eval_cp_for_storage(prev.eval_cp, prev.mate_in, prev.fen)
+            mistake.eval_after_cp = _eval_cp_for_storage(pos.eval_cp, pos.mate_in, pos.fen)
             mistake.winrate_before = wr_before
             mistake.winrate_after = wr_after
             mistake.winrate_drop = drop

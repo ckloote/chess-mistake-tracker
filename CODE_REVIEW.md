@@ -34,13 +34,10 @@ Full review of docs (README.md, DESIGN.md, IMPLEMENTATION.md), the entire backen
 - **Was:** `is_user_move` and `_to_position_rows`' clock attribution (`backend/app/services/analysis.py`) assumed white moves on odd plies — only true from the standard starting position. `MoveList.tsx`'s `buildPairs` made the same parity assumption. Verified repro: a `[FEN "... b ..."]` chapter flagged every black move as the white user's; mistakes landed on the opponent's plies and clock deltas swapped colors.
 - **Fix:** mover is now derived from the position's FEN side-to-move (`mover_color` in `services/analysis.py`; mover = opposite of the turn field) for both `is_user_move` and clock-delta attribution. `MoveList.tsx` derives mover and move number from the FEN the same way, pairing score-sheet rows correctly for black-first starts. Documented in DESIGN.md (§Data Model `positions` note) and IMPLEMENTATION.md Phase 4. Regression tests: FEN-start fixture in `test_analysis_service.py` (attribution + clocks) and `test_mistake_detection.py` (blunder lands on the black user's ply 3; nothing flagged for a white user). **Note:** any FEN-start study chapters analyzed before this fix carry inverted `is_user_move` rows — re-analyze them (`analyze-pending?force=true` is classification-preserving since the B1 fix).
 
-### B3 — `mate_in == 0` always treated as "white wins" (MEDIUM, wrong-direction when hit) — VERIFIED
+### B3 — `mate_in == 0` always treated as "white wins" — **FIXED 2026-07-07**
 
-- **Where:** `backend/app/chess_utils/winrate.py` — `_white_winrate` maps `mate_in == 0` to `+MATE_CP_EQUIVALENT` ("just delivered"). Same collapse in `backend/app/services/mistake_detection.py:64` (`_eval_cp_for_storage`) and `backend/app/services/heuristics.py:51` (`_user_view_cp` treats `mate_in > 0` else negative — so 0 becomes −1000 there, inconsistent with winrate.py's +1000).
-- **Root cause:** `%eval #-0` (black delivered mate) parses through python-chess to `mate_in = 0` — the sign is lost as an int.
-- **Verified repro:** Fool's Mate PGN with `[%eval #-0]` on `Qh4#` → `winrate_for_color(..., "white")` returns **97.5%** for the checkmated white player.
-- **Concrete failure:** a black user delivering mate annotated `#-0` sees winrate 97.5 → 2.5 on their own mating move → flagged as a blunder. Suppression rules don't catch it. Low frequency (Lichess usually omits eval on the mating move; the Step-4 `delivers_mate` special case in heuristics already fires from the board), but wrong-direction when it hits.
-- **Suggested fix:** when `mate_in == 0`, the side to move in that position's FEN is the *mated* side — derive the winner from the FEN rather than assuming white. Requires threading the FEN (or the mated color) into `_white_winrate` callers; all call sites have the Position row in hand.
+- **Was:** `%eval #-0` (black delivered mate) parses to the int `mate_in = 0` with the sign lost; `winrate.py` read that as white-wins (+1000) while `heuristics._user_view_cp` read it as −1000 — so a black user delivering mate saw their mating move flagged as a ~95-point blunder (verified with Fool's Mate).
+- **Fix:** new `mate_zero_white_view_cp(fen)` in `chess_utils/winrate.py` — in a checkmate position the FEN's side-to-move is the mated side, so the winner is derived from the FEN. All three mate-collapsing helpers (`winrate_for_color`, detection's `_eval_cp_for_storage`, heuristics' `_user_view_cp`) now take the position's FEN and agree; without a FEN the legacy white-wins assumption remains as documented fallback. Regression tests: FEN-disambiguation units in `test_winrate.py` plus Fool's-Mate end-to-end in `test_mistake_detection.py` (delivering mate not flagged; getting mated flags the mover's move as a Step-4 blunder). DESIGN.md §"Win% from centipawn eval" and the `positions.mate_in` column note updated.
 
 ### B4 — `PATCH /settings` study IDs / aliases are dead controls — **FIXED 2026-07-06**
 
@@ -106,7 +103,7 @@ Deviations that are **documented and fine** (no action): Step 4 uses the actual 
 2. ~~B2 (FEN-start parity)~~ **DONE 2026-07-06.**
 3. ~~B4 (settings → study source wiring)~~ **DONE 2026-07-06** — the Phase 12 settings UI can now build on it.
 4. ~~F2 (game refresh)~~ **DONE 2026-07-06.**
-5. B3 + minor bugs opportunistically alongside the above; Phase 12 UI next (all backend prerequisites in place).
+5. ~~B3~~ **DONE 2026-07-07**; ~~Phase 12 UI~~ **DONE 2026-07-07**. Minor bugs (M1–M10) remain opportunistic.
 6. F3 → F4 → F5 as feature work.
 
 ## 7. Verification notes for the next agent

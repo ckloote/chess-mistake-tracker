@@ -80,3 +80,36 @@ def test_severity_thresholds() -> None:
     assert severity_for_drop(19.99, 5, 10, 20) == "mistake"
     assert severity_for_drop(20.0, 5, 10, 20) == "blunder"
     assert severity_for_drop(80.0, 5, 10, 20) == "blunder"
+
+
+# ---- Delivered mate (mate_in == 0): winner derived from the FEN ------------
+# "#-0" and "#0" both parse to the int 0 — the sign is lost. The FEN's
+# side-to-move is the mated side.
+
+# Fool's mate final position: white to move, checkmated by Qh4#.
+_WHITE_MATED_FEN = (
+    "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3"
+)
+# Scholar's mate final position: black to move, checkmated by Qxf7#.
+_BLACK_MATED_FEN = (
+    "r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 0 4"
+)
+
+
+def test_mate_zero_credits_winner_from_fen() -> None:
+    # White is mated -> white winrate ~0, black ~100.
+    white_view = winrate_for_color(None, 0, "white", fen=_WHITE_MATED_FEN)
+    black_view = winrate_for_color(None, 0, "black", fen=_WHITE_MATED_FEN)
+    assert white_view is not None and white_view < 5.0
+    assert black_view is not None and black_view > 95.0
+
+    # Black is mated -> mirrored.
+    white_view = winrate_for_color(None, 0, "white", fen=_BLACK_MATED_FEN)
+    black_view = winrate_for_color(None, 0, "black", fen=_BLACK_MATED_FEN)
+    assert white_view is not None and white_view > 95.0
+    assert black_view is not None and black_view < 5.0
+
+
+def test_mate_zero_without_fen_keeps_legacy_white_wins_assumption() -> None:
+    white_view = winrate_for_color(None, 0, "white")
+    assert white_view is not None and white_view > 95.0

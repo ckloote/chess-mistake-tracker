@@ -15,28 +15,50 @@ def cp_to_winrate(cp: int) -> float:
     return 50 + 50 * (2 / (1 + math.exp(-0.00368208 * cp)) - 1)
 
 
-def _white_winrate(eval_cp: int | None, mate_in: int | None) -> float | None:
+def mate_zero_white_view_cp(fen: str | None) -> int:
+    """Resolve the ambiguous `mate_in == 0` ("mate is on the board") into a
+    signed white-view cp value.
+
+    A PGN `[%eval #-0]` (black delivered mate) and `[%eval #0]` both parse to
+    the integer 0 — the sign doesn't survive. The FEN disambiguates: in a
+    checkmate position the *side to move* is the mated side. Without a FEN we
+    fall back to the historical assumption that white delivered it."""
+    if fen:
+        parts = fen.split()
+        if len(parts) >= 2 and parts[1] == "w":
+            return -MATE_CP_EQUIVALENT  # white to move ⇒ white is mated
+    return MATE_CP_EQUIVALENT
+
+
+def _white_winrate(
+    eval_cp: int | None, mate_in: int | None, fen: str | None = None
+) -> float | None:
     """Convert (cp, mate) into a white-relative winrate, or None if neither
-    is set."""
+    is set. `fen` is only consulted for mate_in == 0 (see
+    mate_zero_white_view_cp)."""
     if mate_in is not None:
         # mate_in > 0 means white mates; < 0 means black mates; 0 means
-        # the side to move is mated (game over). Either way, treat as fully
-        # decisive in the appropriate direction.
+        # mate has been delivered — winner derived from the FEN.
         if mate_in > 0:
             return cp_to_winrate(MATE_CP_EQUIVALENT)
         if mate_in < 0:
             return cp_to_winrate(-MATE_CP_EQUIVALENT)
-        return cp_to_winrate(MATE_CP_EQUIVALENT)  # mate_in == 0: just delivered
+        return cp_to_winrate(mate_zero_white_view_cp(fen))
     if eval_cp is not None:
         return cp_to_winrate(eval_cp)
     return None
 
 
 def winrate_for_color(
-    eval_cp: int | None, mate_in: int | None, user_color: str
+    eval_cp: int | None,
+    mate_in: int | None,
+    user_color: str,
+    fen: str | None = None,
 ) -> float | None:
-    """Winrate from `user_color`'s perspective in [0, 100], or None if no eval."""
-    white_view = _white_winrate(eval_cp, mate_in)
+    """Winrate from `user_color`'s perspective in [0, 100], or None if no eval.
+    Pass the position's `fen` so a delivered mate (mate_in == 0) is credited
+    to the right side — the int sign of "#-0" is lost in parsing."""
+    white_view = _white_winrate(eval_cp, mate_in, fen)
     if white_view is None:
         return None
     if user_color == "black":

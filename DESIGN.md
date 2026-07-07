@@ -114,7 +114,7 @@ One row per ply. Generated when a game is analyzed. Lazy: only created on first 
 | uci | text nullable | |
 | is_user_move | bool | did the user play the move that led here |
 | eval_cp | int nullable | from white's perspective; null if mate |
-| mate_in | int nullable | + = white mates, − = black mates |
+| mate_in | int nullable | + = white mates, − = black mates; 0 = mate delivered (winner derived from the FEN's side-to-move — see §"Win% from centipawn eval") |
 | clock_ms | int nullable | seconds remaining after this move was played |
 | time_spent_ms | int nullable | computed from clock deltas |
 
@@ -170,6 +170,8 @@ def cp_to_winrate(cp: int) -> float:
 ```
 
 For mate scores, use ±1000 cp equivalent (winrate ≈ 100 / 0). Document this approximation; it doesn't matter for our purposes since mate positions aren't where the user is "giving away an advantage."
+
+One wrinkle: a *delivered* mate (`[%eval #-0]` on the mating move) parses to the integer `mate_in = 0` — the sign doesn't survive, so the value alone can't say who won. The FEN disambiguates: in a checkmate position the side to move is the mated side (`mate_zero_white_view_cp` in `chess_utils/winrate.py`). Without this, a user *delivering* mate annotated `#-0` read as a ~95-point winrate drop and got their mating move flagged as a blunder. All mate-collapsing helpers (`winrate_for_color`, detection's `_eval_cp_for_storage`, the heuristic's `_user_view_cp`) take the position's FEN for this case.
 
 ### Detection algorithm
 
