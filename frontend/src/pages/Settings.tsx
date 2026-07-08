@@ -208,6 +208,24 @@ export function Settings() {
               From <code>.env</code> — changing it means re-seeding the database.
             </span>
           </div>
+          <div className="filter-group">
+            <label htmlFor="s-engine">Local Stockfish</label>
+            <input
+              id="s-engine"
+              type="text"
+              value={
+                settingsQuery.data?.stockfish_available
+                  ? 'Available'
+                  : 'Not found'
+              }
+              disabled
+            />
+            <span className="settings-hint">
+              {settingsQuery.data?.stockfish_available
+                ? 'Games without Lichess evals are analyzed locally; the Explore board is live.'
+                : 'Install stockfish (or set STOCKFISH_PATH) to analyze games without Lichess evals.'}
+            </span>
+          </div>
         </div>
       </section>
 

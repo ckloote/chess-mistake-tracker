@@ -16,11 +16,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
+from dataclasses import replace
 
 import chess
 import chess.engine
 
-from backend.app.analyzers.base import EvalResult
+from backend.app.analyzers.base import EvalResult, PositionEval
+from backend.app.analyzers.lichess_pgn import parse_pgn_for_positions
 
 log = logging.getLogger(__name__)
 
@@ -152,12 +154,62 @@ class StockfishLocalAnalyzer:
             )
         return results
 
-    async def analyze_game(self, pgn: str) -> list:
-        """Full-game analysis (would replace the PGN eval reader for games
-        without embedded evals) is deferred. For now this analyzer only
-        backs the per-position heuristic best-move lookup; whole-game
-        analysis joins the post-MVP queue alongside the chess.com source."""
-        raise NotImplementedError(
-            "StockfishLocalAnalyzer.analyze_game is not implemented yet — "
-            "this analyzer currently fills the per-position best-move gap only."
-        )
+    async def analyze_game(self, pgn: str) -> list[PositionEval]:
+        """Whole-game analysis: walk the PGN mainline and evaluate every
+        position (ply 0 included) with the engine. This is the eval source
+        for games whose PGN carries no %eval annotations — OTB study
+        chapters, Lichess games nobody requested analysis for.
+
+        SAN/UCI/clocks come from the PGN; eval_cp/mate_in come from
+        Stockfish, white-POV to match the %eval convention. Terminal
+        positions are settled by rule rather than engine: checkmate →
+        mate_in=0 (downstream winrate code reads the winner off the FEN's
+        side-to-move), any other game end → 0 cp. A per-position engine
+        error leaves that ply's eval None and continues — mistake detection
+        already tolerates eval gaps.
+
+        Returns [] when the engine isn't running or the PGN has no parseable
+        game, mirroring analyze_position's silent-fail contract."""
+        if self._engine is None:
+            return []
+        skeleton = parse_pgn_for_positions(pgn)
+        if not skeleton:
+            return []
+
+        # One hash-table reset per game (not per position): successive game
+        # positions overlap heavily, so a warm hash speeds the pass up, and
+        # unlike the best-move probe there is no fresh-process endpoint this
+        # needs to agree with.
+        game_key = object()
+
+        out: list[PositionEval] = []
+        for pe in skeleton:
+            board = chess.Board(pe.fen)
+            cp: int | None = None
+            mate: int | None = None
+            if board.is_game_over():
+                if board.is_checkmate():
+                    mate = 0
+                else:
+                    cp = 0
+            else:
+                try:
+                    info = await self._engine.analyse(
+                        board, self._limit(), game=game_key
+                    )
+                except (chess.engine.EngineError, asyncio.CancelledError) as e:
+                    log.warning(
+                        "stockfish analyse failed at ply %d (fen=%r): %s",
+                        pe.ply, pe.fen, e,
+                    )
+                    out.append(pe)
+                    continue
+                score = info.get("score")
+                if score is not None:
+                    white_score = score.white()
+                    if white_score.is_mate():
+                        mate = white_score.mate()
+                    else:
+                        cp = white_score.score()
+            out.append(replace(pe, eval_cp=cp, mate_in=mate))
+        return out

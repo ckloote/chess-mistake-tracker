@@ -92,7 +92,7 @@ Deviations that are **documented and fine** (no action): Step 4 uses the actual 
 
 - **F1 — Classification-preserving re-analysis** (fixes B1): ~~re-detect, diff by `(game_id, ply)`, carry classifications onto survivors, report "N new / M removed / K preserved."~~ **DONE 2026-07-06** — see B1. Phase 12's "Re-analyze all" button is now safe to build on top.
 - **F2 — Game refresh** (fixes gap 1): ~~`POST /games/{id}/refresh` — implement `fetch_game_by_id`, update PGN/`has_evals`, clear `analyzed_at`.~~ **DONE 2026-07-06** — see gap 1. The "Request analysis on Lichess" deep link + refresh button in the Games UI go with Phase 12.
-- **F3 — Whole-game local Stockfish analysis** (`StockfishLocalAnalyzer.analyze_game`): makes `has_evals=false` games and all study chapters processable without Lichess; prerequisite for chess.com support. Already noted as the next step in project memory/DESIGN.
+- **F3 — Whole-game local Stockfish analysis: DONE 2026-07-07.** `StockfishLocalAnalyzer.analyze_game` evaluates every mainline position (ply 0 included; warm hash per game; terminal positions settled by rule). `analyze_game`/`analyze_pending` fall back to it for `has_evals=false` games when an engine is present; `GET /settings` exposes read-only `stockfish_available`; Games page shows "Pending (local engine)" with a working Analyze button while keeping the Request ↗ / Refresh path. Unblocks chess.com support.
 - **F4 — Filtered analytics: DONE 2026-07-07.** Shared `StatFilters` dependency (`from`/`to`, `source`, `color`, `severity`, `speed`) on all three `/stats/*` endpoints; `speed` is bucketed from the TimeControl header (new `chess_utils/time_control.py`, Lichess convention — `parse_time_control` moved there from `services/analysis.py`). Filter bar on /stats with state in the URL; Dashboard intentionally stays unfiltered.
 - **F5 — Drill mode** (from the existing backlog): re-present classified mistake positions as find-the-move puzzles ordered by weakest Layer A × B cell, spaced repetition on misses. Closes the diagnosis → training loop; today the prescription is text-only.
 - **F6 — Smaller:** import/analyze buttons in the UI (Phase 12); honor `#ply=` in GameDetail (M1); "heuristic accuracy" stat (suggested-vs-classified agreement rate over time); per-game eval graph in review (data already in `positions`); CSV/PDF export of classified mistakes for a coach.
@@ -106,7 +106,7 @@ Deviations that are **documented and fine** (no action): Step 4 uses the actual 
 3. ~~B4 (settings → study source wiring)~~ **DONE 2026-07-06** — the Phase 12 settings UI can now build on it.
 4. ~~F2 (game refresh)~~ **DONE 2026-07-06.**
 5. ~~B3~~ **DONE 2026-07-07**; ~~Phase 12 UI~~ **DONE 2026-07-07**; ~~minor bugs M1–M10~~ **ALL DONE 2026-07-07**.
-6. ~~F4 (filtered analytics)~~ **DONE 2026-07-07**. F3 → F5 as feature work — **the only items left from this review**.
+6. ~~F4 (filtered analytics)~~ **DONE 2026-07-07**; ~~F3 (whole-game Stockfish)~~ **DONE 2026-07-07**. F5 (drill mode) is **the only item left from this review**.
 
 ## 7. Verification notes for the next agent
 

@@ -184,6 +184,101 @@ async def test_analyze_game_skips_when_no_evals(
     assert "has_evals" in (result.reason or "")
 
 
+# ---- Whole-game local analysis (F3) ----------------------------------------
+
+# Same game as SCHOLARS_MATE_PGN but with no %eval annotations — the shape of
+# an OTB study chapter or an unanalyzed Lichess export.
+NOEVAL_SCHOLARS_PGN = """\
+[Event "Test"]
+[Site "https://lichess.org/abcd1234"]
+[White "alice"]
+[Black "configured_user"]
+[Result "1-0"]
+[TimeControl "300+0"]
+
+1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0
+"""
+
+
+class _FakeWholeGameLocal:
+    """Stands in for StockfishLocalAnalyzer in whole-game mode: parses the
+    PGN and synthesizes the same eval trajectory SCHOLARS_MATE_PGN carries
+    as %eval annotations (plus a ply-0 eval, which the engine path also
+    produces)."""
+
+    name = "fake_local"
+
+    @property
+    def supports_per_position(self) -> bool:
+        return True
+
+    async def analyze_position(self, fen: str, multipv: int = 1) -> list:
+        return []
+
+    async def analyze_game(self, pgn: str) -> list:
+        from dataclasses import replace
+
+        from backend.app.analyzers.lichess_pgn import parse_pgn_for_positions
+
+        evals = {0: 20, 1: 21, 2: 18, 3: -42, 4: -35, 5: -30, 6: 921}
+        return [
+            replace(pe, mate_in=0) if pe.ply == 7 else replace(pe, eval_cp=evals[pe.ply])
+            for pe in parse_pgn_for_positions(pgn)
+        ]
+
+
+async def test_analyze_game_uses_local_engine_for_evalless_game(
+    db_session: Session, user_and_game: tuple[User, Game]
+) -> None:
+    _, game = user_and_game
+    game.has_evals = False
+    game.pgn = NOEVAL_SCHOLARS_PGN
+    db_session.commit()
+
+    result = await analyze_game(
+        db_session, game,
+        cloud_analyzer=_NoOpCloud(),
+        local_analyzer=_FakeWholeGameLocal(),
+    )
+
+    assert result.skipped is False
+    assert result.positions_created == 8
+    positions = list(
+        db_session.scalars(
+            select(Position).where(Position.game_id == game.id).order_by(Position.ply)
+        ).all()
+    )
+    # Locally produced evals land on the rows — ply 0 included.
+    assert positions[0].eval_cp == 20
+    assert positions[6].eval_cp == 921
+    assert positions[7].mate_in == 0
+    # The 3...Nf6 blunder (user is black) is detectable from local evals.
+    assert result.mistakes_detected >= 1
+    assert game.analyzed_at is not None
+
+
+async def test_analyze_pending_includes_evalless_games_only_with_local_engine(
+    db_session: Session, user_and_game: tuple[User, Game]
+) -> None:
+    _, game = user_and_game
+    game.has_evals = False
+    game.pgn = NOEVAL_SCHOLARS_PGN
+    db_session.commit()
+
+    # Without a local engine the game isn't analyzable — not even selected.
+    without = await analyze_pending(db_session, cloud_analyzer=_NoOpCloud())
+    assert without == []
+
+    with_local = await analyze_pending(
+        db_session,
+        cloud_analyzer=_NoOpCloud(),
+        local_analyzer=_FakeWholeGameLocal(),
+    )
+    assert len(with_local) == 1
+    assert with_local[0].skipped is False
+    assert with_local[0].positions_created == 8
+
+
 async def test_analyze_game_populates_clock_and_time_spent(
     db_session: Session, user_and_game: tuple[User, Game]
 ) -> None:

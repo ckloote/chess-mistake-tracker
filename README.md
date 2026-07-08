@@ -82,15 +82,15 @@ make dev                      # runs backend (:8000) and frontend (:5173) togeth
 
 The app is at <http://localhost:5173>; the backend serves on <http://localhost:8000>. Health check: `curl localhost:8000/health`. OpenAPI docs: <http://localhost:8000/docs>.
 
-Optional: install [Stockfish](https://stockfishchess.org/) (`apt install stockfish`, or set `STOCKFISH_PATH`) to enable the interactive Explore board and higher-quality best-move suggestions. Without it those features degrade gracefully (cloud-eval fallback / hidden panel).
+Optional (recommended): install [Stockfish](https://stockfishchess.org/) (`apt install stockfish`, or set `STOCKFISH_PATH`) to enable analyzing games that carry no Lichess evals (OTB study chapters, unanalyzed online games), the interactive Explore board, and higher-quality best-move suggestions. Without it those features degrade gracefully (eval-less games need Lichess's "request analysis" flow; cloud-eval fallback / hidden panel elsewhere). The Settings page shows whether the engine was found.
 
 ## Using the app
 
 The daily loop, all reachable from the UI:
 
 1. **Import** — on the *Games* page pick "Lichess games" (with a max) or "Lichess studies" and click Import. Study IDs and the player aliases used to match your name in OTB chapters are edited on the *Settings* page (the `LICHESS_STUDY_IDS` / `STUDY_PLAYER_ALIASES` env vars only seed them on first run). Re-importing is idempotent — existing games are skipped, never overwritten.
-2. **Analyze** — "Analyze pending" processes every imported game whose PGN carries `%eval` annotations: positions, mistake detection, and a suggested thinking-step per mistake.
-3. **Games without evals** show a *Needs Lichess analysis* status: click *Request ↗* to open the game on Lichess and request computer analysis there, then click *Refresh* to re-fetch it — the game becomes analyzable.
+2. **Analyze** — "Analyze pending" processes every analyzable game: positions, mistake detection, and a suggested thinking-step per mistake. Games whose PGN carries `%eval` annotations use those; with local Stockfish installed, games without evals (OTB study chapters, unanalyzed online games) are evaluated locally — expect a few seconds per game.
+3. **Without Stockfish**, eval-less games show a *Needs Lichess analysis* status instead: click *Request ↗* to open the game on Lichess and request computer analysis there, then click *Refresh* to re-fetch it — the game becomes analyzable. (Both paths remain available when the engine is installed; Lichess's server analysis is deeper than the local default.)
 4. **Classify** — the *Mistakes* page is the queue. Each mistake gets a thinking step (1–4), an awareness call (*Got it wrong* / *Didn't see it*), optional tags and notes. Keyboard-first: `1–4`, `G`/`D`, `Enter` to save-and-advance. See [HOWTO.md](./HOWTO.md) for what the buckets mean.
 5. **Review patterns** — the *Dashboard* and *Stats* pages show where your mistakes cluster and what to train first. The Stats page has a filter bar (date range, source, color, severity, speed) for slicing — e.g. blitz-only vs OTB-only to see whether the patterns differ.
 6. **Tune** — detection thresholds and suppression bounds live on the *Settings* page. After changing them, use the offered "Re-analyze all games" — classifications and notes always survive re-analysis.

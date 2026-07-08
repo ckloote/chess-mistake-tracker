@@ -4,6 +4,7 @@ import { apiFetch } from './client'
 // Mirrors backend/app/schemas/settings.SettingsOut.
 export interface AppSettings {
   lichess_username: string // read-only; changing it means re-seeding
+  stockfish_available: boolean // read-only capability flag from the host
   winrate_inaccuracy: number
   winrate_mistake: number
   winrate_blunder: number
@@ -14,8 +15,10 @@ export interface AppSettings {
   study_player_aliases: string[]
 }
 
-// PATCH body — all optional; lichess_username is not editable.
-export type SettingsUpdate = Partial<Omit<AppSettings, 'lichess_username'>>
+// PATCH body — all optional; the read-only fields are not editable.
+export type SettingsUpdate = Partial<
+  Omit<AppSettings, 'lichess_username' | 'stockfish_available'>
+>
 
 // The fields whose change makes existing Mistake rows stale — used to decide
 // when to show the "re-analyze to apply" warning after a save.

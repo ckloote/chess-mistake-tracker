@@ -9,6 +9,9 @@ class SettingsOut(BaseModel):
     # Read-only context for the settings page: the boot-time username from the
     # env (changing it implies re-seeding, so there's no PATCH for it).
     lichess_username: str = ""
+    # Read-only capability flag: whether a local Stockfish binary resolves.
+    # Drives UI copy — eval-less games are analyzable locally when true.
+    stockfish_available: bool = False
 
     winrate_inaccuracy: float
     winrate_mistake: float

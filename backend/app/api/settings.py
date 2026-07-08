@@ -8,6 +8,7 @@ knobs."""
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from backend.app.analyzers.stockfish_local import resolve_stockfish_path
 from backend.app.config import Settings, get_settings
 from backend.app.db import get_db
 from backend.app.models import AppSettings
@@ -19,8 +20,14 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 def _to_out(row: AppSettings, settings: Settings) -> SettingsOut:
     out = SettingsOut.model_validate(row)
-    # Read-only context from the env; not a column on the row.
-    return out.model_copy(update={"lichess_username": settings.lichess_username})
+    # Read-only context from the env/host; not columns on the row.
+    return out.model_copy(
+        update={
+            "lichess_username": settings.lichess_username,
+            "stockfish_available": resolve_stockfish_path(settings.stockfish_path or None)
+            is not None,
+        }
+    )
 
 
 @router.get("", response_model=SettingsOut)

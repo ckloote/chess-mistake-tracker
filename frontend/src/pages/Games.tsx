@@ -10,6 +10,7 @@ import {
   type Game,
   type GameFilters,
 } from '../api/games'
+import { useSettings } from '../api/settings'
 
 const FILTER_DEFAULTS = {
   source: '',
@@ -49,9 +50,14 @@ interface GameStatus {
   className: string
 }
 
-function gameStatus(g: { has_evals: boolean; analyzed_at: string | null }): GameStatus {
+function gameStatus(
+  g: { has_evals: boolean; analyzed_at: string | null },
+  engineAvailable: boolean,
+): GameStatus {
   if (g.analyzed_at) return { label: 'Analyzed', className: 'analyzed' }
   if (g.has_evals) return { label: 'Pending', className: 'pending' }
+  // No PGN evals — but a local Stockfish can produce them during analysis.
+  if (engineAvailable) return { label: 'Pending (local engine)', className: 'pending' }
   return { label: 'Needs Lichess analysis', className: 'needs' }
 }
 
@@ -74,6 +80,8 @@ export function Games() {
   const analyzePending = useAnalyzePending()
   const analyzeGame = useAnalyzeGame()
   const refreshGame = useRefreshGame()
+  const settingsQuery = useSettings()
+  const engineAvailable = settingsQuery.data?.stockfish_available ?? false
 
   const [importSource, setImportSource] = useState('lichess_online')
   const [importMax, setImportMax] = useState('30')
@@ -284,7 +292,7 @@ export function Games() {
               </thead>
               <tbody>
                 {items.map((g) => {
-                  const status = gameStatus(g)
+                  const status = gameStatus(g, engineAvailable)
                   return (
                     <tr key={g.id}>
                       <td className="cell-date">{formatDate(g.played_at)}</td>
@@ -329,7 +337,7 @@ export function Games() {
                               : 'Analyze'}
                           </button>
                         )}
-                        {status.className === 'needs' && (
+                        {!g.has_evals && !g.analyzed_at && (
                           <>
                             <a
                               className="row-link"

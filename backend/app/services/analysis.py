@@ -132,32 +132,39 @@ async def analyze_game(
     """Run the analyzer for one game. Idempotent: drops + recreates Position
     rows; Mistake rows are *reconciled*, not recreated, so re-running never
     destroys user classifications (see detect_mistakes / DESIGN.md
-    §"Re-analysis semantics"). Skips silently if has_evals is False (caller
-    should surface).
+    §"Re-analysis semantics").
+
+    Eval source: PGN-embedded %eval annotations when has_evals is true;
+    otherwise whole-game local Stockfish when `local_analyzer` is present.
+    Games with neither are skipped (caller should surface the reason).
 
     `cloud_analyzer` is injectable so unit tests can stub the network. None →
     real Lichess cloud-eval (production).
-    `local_analyzer`, when present, fills the cloud's coverage gap during
-    best-move lookups for the heuristic — typically a StockfishLocalAnalyzer
-    started by the caller."""
-    if not game.has_evals:
+    `local_analyzer` — typically a StockfishLocalAnalyzer started by the
+    caller — is the eval source for eval-less games (above) and fills the
+    cloud's coverage gap during the heuristic's best-move lookups."""
+    if game.has_evals:
+        position_evals = await LichessPgnEvalAnalyzer().analyze_game(game.pgn)
+    elif local_analyzer is not None:
+        position_evals = await local_analyzer.analyze_game(game.pgn)
+    else:
         return AnalysisResult(
             game_id=game.id,
             positions_created=0,
             mistakes_detected=0,
             skipped=True,
-            reason="has_evals=False; request analysis on Lichess and re-import.",
+            reason=(
+                "has_evals=False and no local engine; install Stockfish, or "
+                "request analysis on Lichess and refresh the game."
+            ),
         )
-
-    analyzer = LichessPgnEvalAnalyzer()
-    position_evals = await analyzer.analyze_game(game.pgn)
     if not position_evals:
         return AnalysisResult(
             game_id=game.id,
             positions_created=0,
             mistakes_detected=0,
             skipped=True,
-            reason="PGN parse failed.",
+            reason="No positions produced (PGN parse failed or engine unavailable).",
         )
 
     session.execute(delete(Position).where(Position.game_id == game.id))
@@ -190,17 +197,21 @@ async def analyze_pending(
     local_analyzer: Analyzer | None = None,
     force: bool = False,
 ) -> list[AnalysisResult]:
-    """Run analysis on has_evals=true games. By default only the ones not yet
-    analyzed; with force=True, re-run already-analyzed games too (analyze_game
-    is idempotent — positions are dropped and recreated, mistakes are
-    reconciled in place so user classifications survive the re-run).
+    """Run analysis on every analyzable game. With a local engine that means
+    all games (eval-less ones go through whole-game Stockfish, ~seconds per
+    game); without one, only has_evals=true games qualify. By default only
+    games not yet analyzed; with force=True, re-run already-analyzed games
+    too (analyze_game is idempotent — positions are dropped and recreated,
+    mistakes are reconciled in place so user classifications survive).
 
     A single cloud analyzer (and single local analyzer when provided) is used
     for every game so the underlying httpx client / Stockfish process is
     shared across the run. When the caller doesn't supply one, we build it
     here around one shared httpx client — otherwise each cloud-eval call
     would pay connection setup on its own throwaway client."""
-    stmt = select(Game).where(Game.has_evals.is_(True))
+    stmt = select(Game)
+    if local_analyzer is None:
+        stmt = stmt.where(Game.has_evals.is_(True))
     if not force:
         stmt = stmt.where(Game.analyzed_at.is_(None))
     games = list(session.scalars(stmt).all())

@@ -1,11 +1,12 @@
 import logging
-from datetime import date, datetime, time, timezone
+from datetime import date
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
+from backend.app.api.dates import end_of_day, start_of_day
 from backend.app.config import Settings, get_settings
 from backend.app.db import get_db
 from backend.app.models import Game, Mistake, Position, User
@@ -43,14 +44,6 @@ def _get_configured_user(db: Session, settings: Settings) -> User:
             detail="Configured user not found in DB. Run `make seed` first.",
         )
     return user
-
-
-def _start_of_day(d: date) -> datetime:
-    return datetime.combine(d, time.min, tzinfo=timezone.utc)
-
-
-def _end_of_day(d: date) -> datetime:
-    return datetime.combine(d, time.max, tzinfo=timezone.utc)
 
 
 def _to_analyze_response(r: AnalysisResult) -> AnalyzeResponse:
@@ -114,9 +107,9 @@ def list_games(
     if source is not None:
         stmt = stmt.where(Game.source == source)
     if from_ is not None:
-        stmt = stmt.where(Game.played_at >= _start_of_day(from_))
+        stmt = stmt.where(Game.played_at >= start_of_day(from_))
     if to is not None:
-        stmt = stmt.where(Game.played_at <= _end_of_day(to))
+        stmt = stmt.where(Game.played_at <= end_of_day(to))
     if result is not None:
         stmt = stmt.where(Game.result == result)
     if color is not None:

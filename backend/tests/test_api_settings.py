@@ -12,6 +12,18 @@ def test_get_settings_returns_defaults_on_first_call(client) -> None:
     assert isinstance(data["lichess_study_ids"], list)
 
 
+def test_get_settings_reports_stockfish_availability(client, monkeypatch) -> None:
+    """stockfish_available mirrors whether a binary resolves — the UI keys
+    'analyzable locally' copy off it."""
+    import backend.app.api.settings as settings_api
+
+    monkeypatch.setattr(settings_api, "resolve_stockfish_path", lambda _: "/some/stockfish")
+    assert client.get("/api/v1/settings").json()["stockfish_available"] is True
+
+    monkeypatch.setattr(settings_api, "resolve_stockfish_path", lambda _: None)
+    assert client.get("/api/v1/settings").json()["stockfish_available"] is False
+
+
 def test_patch_settings_partial_update_persists(client) -> None:
     # Touch one threshold and one list field.
     response = client.patch(

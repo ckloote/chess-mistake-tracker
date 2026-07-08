@@ -333,7 +333,8 @@ class Analyzer(Protocol):
 
 ### Implemented since MVP
 
-- `StockfishLocalAnalyzer`: spawns local Stockfish via `python-chess.engine`. Configurable depth/time/multipv; one process per analyze run (UCI handshake paid once). It is now the **canonical** per-position source for `M_best` (local-first; cloud is fallback), backs the on-demand `POST /analysis/position` endpoint the Explore board calls, and is **required** for the Step-2 material-threat probe (the null-move probe can't run on cloud-eval). Resolved from `STOCKFISH_PATH` or `stockfish` on `PATH`; absent ⇒ feature degrades silently to cloud/heuristic-only. Every analysis sends `ucinewgame` so results are reproducible regardless of process warmth. Whole-game analysis (`analyze_game`) is still deferred — it only fills the per-position gap today.
+- `StockfishLocalAnalyzer`: spawns local Stockfish via `python-chess.engine`. Configurable depth/time/multipv; one process per analyze run (UCI handshake paid once). It is now the **canonical** per-position source for `M_best` (local-first; cloud is fallback), backs the on-demand `POST /analysis/position` endpoint the Explore board calls, and is **required** for the Step-2 material-threat probe (the null-move probe can't run on cloud-eval). Resolved from `STOCKFISH_PATH` or `stockfish` on `PATH`; absent ⇒ feature degrades silently to cloud/heuristic-only. Per-position analysis sends `ucinewgame` per FEN so results are reproducible regardless of process warmth.
+- **Whole-game analysis** (`StockfishLocalAnalyzer.analyze_game`): walks the PGN mainline and evaluates every position (ply 0 included — one more than the PGN path gives, so ply-1 mistakes are detectable) at the configured depth/time. This is the eval source for `has_evals=false` games — OTB study chapters, unanalyzed Lichess exports — and removes the hard dependency on Lichess's "request analysis" flow. White-POV evals matching the `%eval` convention; terminal positions settled by rule (checkmate → `mate_in=0`, whose winner downstream code reads off the FEN; other endings → 0 cp). Unlike the per-position probe it keeps a warm hash within a game (one `ucinewgame` per game) — successive positions overlap, and there's no fresh-process endpoint the pass must agree with. A per-position engine error leaves that ply's eval `None` and continues; detection tolerates gaps. Budget: roughly seconds per game at the default depth 15.
 
 ### Practical note on MVP coverage
 
@@ -342,6 +343,8 @@ Lichess's PGN export only embeds evals if computer analysis has been requested f
 2. Process `has_evals=true` games immediately.
 3. List `has_evals=false` games in a "needs Lichess analysis" section, with a deep link to each game on Lichess so the user can request analysis there. `POST /games/{id}/refresh` then re-fetches the game — ingestion itself never updates existing rows — picking up the evals and making it processable.
 4. Document Stockfish-local as the v1.1 unblocker.
+
+**Since v1.1 (F3):** with a local Stockfish resolvable, step 3 is optional. `analyze_game` falls back to whole-game local analysis for `has_evals=false` games, and analyze-pending includes them in its queue. The UI shows those games as "Pending (local engine)" with a working Analyze button (`GET /settings` exposes the read-only `stockfish_available` flag it keys off); the Request ↗ / Refresh path stays available for anyone preferring Lichess's deeper server analysis. `has_evals` keeps meaning "the PGN carries `%eval`" — a locally analyzed game keeps `has_evals=false` but gains fully evaluated Position rows and `analyzed_at`.
 
 ## API Surface
 
@@ -382,7 +385,7 @@ All three accept the same optional filters, so any view can be sliced to answer 
 
 ### Settings
 
-- `GET /settings`, `PATCH /settings` — thresholds, suppression rules, study IDs, player aliases. The backing `AppSettings` row is the runtime source of truth: env vars (`LICHESS_STUDY_IDS`, `STUDY_PLAYER_ALIASES`, threshold defaults) seed it on first run and are never consulted again. The source registry builds `LichessStudySource` from this row at import time, so a PATCH takes effect on the next import without a restart. Study ids are validated at write time (8 alphanumeric chars → 422 otherwise).
+- `GET /settings`, `PATCH /settings` — thresholds, suppression rules, study IDs, player aliases. The backing `AppSettings` row is the runtime source of truth: env vars (`LICHESS_STUDY_IDS`, `STUDY_PLAYER_ALIASES`, threshold defaults) seed it on first run and are never consulted again. The source registry builds `LichessStudySource` from this row at import time, so a PATCH takes effect on the next import without a restart. Study ids are validated at write time (8 alphanumeric chars → 422 otherwise). GET also carries two read-only context fields that aren't columns on the row: `lichess_username` (from the env) and `stockfish_available` (whether a local engine binary resolves — drives the "analyzable locally" UI copy).
 
 ## Frontend
 
