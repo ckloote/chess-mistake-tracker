@@ -1,7 +1,6 @@
 """Analysis pipeline: take a Game with embedded evals, populate Position rows."""
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -12,6 +11,7 @@ from sqlalchemy.orm import Session
 from backend.app.analyzers.base import Analyzer, PositionEval
 from backend.app.analyzers.lichess_cloud import LichessCloudEvalAnalyzer
 from backend.app.analyzers.lichess_pgn import LichessPgnEvalAnalyzer
+from backend.app.chess_utils.time_control import parse_time_control
 from backend.app.models import Game, Position
 from backend.app.services.heuristics import assign_heuristic_suggestions
 from backend.app.services.mistake_detection import detect_mistakes
@@ -31,21 +31,6 @@ class AnalysisResult:
     mistakes_updated: int = 0
     mistakes_removed: int = 0  # stale unclassified rows deleted
     mistakes_preserved: int = 0  # stale classified rows kept
-
-
-_TC_RE = re.compile(r"^\s*(\d+)\s*(?:\+\s*(\d+))?\s*$")
-
-
-def parse_time_control(tc: str | None) -> tuple[int | None, int | None]:
-    """`"300+0"` -> (300, 0); a bare `"600"` (no increment recorded) ->
-    (600, 0). Anything non-standard (OTB, correspondence `1/86400`, empty)
-    -> (None, None) — caller treats those plies as unmeasurable."""
-    if not tc:
-        return None, None
-    m = _TC_RE.match(tc)
-    if not m:
-        return None, None
-    return int(m.group(1)), int(m.group(2) or 0)
 
 
 def mover_color(fen: str) -> str | None:

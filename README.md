@@ -92,7 +92,7 @@ The daily loop, all reachable from the UI:
 2. **Analyze** — "Analyze pending" processes every imported game whose PGN carries `%eval` annotations: positions, mistake detection, and a suggested thinking-step per mistake.
 3. **Games without evals** show a *Needs Lichess analysis* status: click *Request ↗* to open the game on Lichess and request computer analysis there, then click *Refresh* to re-fetch it — the game becomes analyzable.
 4. **Classify** — the *Mistakes* page is the queue. Each mistake gets a thinking step (1–4), an awareness call (*Got it wrong* / *Didn't see it*), optional tags and notes. Keyboard-first: `1–4`, `G`/`D`, `Enter` to save-and-advance. See [HOWTO.md](./HOWTO.md) for what the buckets mean.
-5. **Review patterns** — the *Dashboard* and *Stats* pages show where your mistakes cluster and what to train first.
+5. **Review patterns** — the *Dashboard* and *Stats* pages show where your mistakes cluster and what to train first. The Stats page has a filter bar (date range, source, color, severity, speed) for slicing — e.g. blitz-only vs OTB-only to see whether the patterns differ.
 6. **Tune** — detection thresholds and suppression bounds live on the *Settings* page. After changing them, use the offered "Re-analyze all games" — classifications and notes always survive re-analysis.
 
 ### Common commands

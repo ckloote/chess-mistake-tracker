@@ -109,3 +109,121 @@ def test_training_prescription_ranks_top_cells(client, db) -> None:
 def test_training_prescription_returns_empty_when_nothing_classified(client) -> None:
     data = client.get("/api/v1/stats/training-prescription").json()
     assert data == {"classified_mistakes": 0, "items": []}
+
+
+# ---- Shared filters (F4) ----------------------------------------------------
+
+def _seed_filterable(db) -> None:
+    """Three games spanning both sources, both colors, blitz/rapid/OTB, and
+    two months — each with distinguishable mistakes."""
+    user = make_user(db)
+    g_blitz_white = make_game(
+        db, user, source="lichess_online", source_game_id="online01",
+        user_color="white", time_control="300+3",
+        played_at=datetime(2025, 5, 10, tzinfo=timezone.utc),
+    )
+    g_rapid_black = make_game(
+        db, user, source="lichess_online", source_game_id="online02",
+        user_color="black", time_control="900+10",
+        played_at=datetime(2025, 6, 10, tzinfo=timezone.utc),
+    )
+    g_otb = make_game(
+        db, user, source="lichess_study", source_game_id="study01:ch1",
+        user_color="white", time_control=None,
+        played_at=datetime(2025, 6, 20, tzinfo=timezone.utc),
+    )
+    make_mistake(
+        db, g_blitz_white, ply=4, severity="blunder",
+        classified_step=4, classified_awareness="didnt_see_it",
+    )
+    make_mistake(
+        db, g_blitz_white, ply=8, severity="inaccuracy",
+        classified_step=3, classified_awareness="got_it_wrong",
+    )
+    make_mistake(
+        db, g_rapid_black, ply=5, severity="mistake",
+        classified_step=2, classified_awareness="didnt_see_it",
+    )
+    make_mistake(
+        db, g_otb, ply=9, severity="blunder",
+        classified_step=1, classified_awareness="didnt_see_it",
+    )
+
+
+def test_summary_filters_by_source(client, db) -> None:
+    _seed_filterable(db)
+    data = client.get("/api/v1/stats/summary?source=lichess_study").json()
+    assert data["total_games"] == 1
+    assert data["total_mistakes"] == 1
+    step_map = {row["step"]: row["count"] for row in data["by_classified_step"]}
+    assert step_map == {1: 1}
+
+
+def test_summary_filters_by_color(client, db) -> None:
+    _seed_filterable(db)
+    data = client.get("/api/v1/stats/summary?color=black").json()
+    assert data["total_games"] == 1
+    assert data["total_mistakes"] == 1
+    severity_map = {row["severity"]: row["count"] for row in data["by_severity"]}
+    assert severity_map == {"mistake": 1}
+
+
+def test_summary_filters_by_date_range(client, db) -> None:
+    _seed_filterable(db)
+    data = client.get("/api/v1/stats/summary?from=2025-06-01&to=2025-06-15").json()
+    assert data["total_games"] == 1  # only the rapid game
+    assert data["total_mistakes"] == 1
+
+
+def test_summary_filters_by_speed(client, db) -> None:
+    _seed_filterable(db)
+    blitz = client.get("/api/v1/stats/summary?speed=blitz").json()
+    assert blitz["total_games"] == 1
+    assert blitz["total_mistakes"] == 2
+    unknown = client.get("/api/v1/stats/summary?speed=unknown").json()
+    assert unknown["total_games"] == 1  # the OTB study game (no TimeControl)
+    assert unknown["total_mistakes"] == 1
+
+
+def test_summary_severity_filters_mistakes_not_games(client, db) -> None:
+    _seed_filterable(db)
+    data = client.get("/api/v1/stats/summary?severity=blunder").json()
+    # Game count stays a property of the game slice; severity narrows mistakes.
+    assert data["total_games"] == 3
+    assert data["total_mistakes"] == 2
+    step_map = {row["step"]: row["count"] for row in data["by_classified_step"]}
+    assert step_map == {1: 1, 4: 1}
+
+
+def test_summary_combines_filters(client, db) -> None:
+    _seed_filterable(db)
+    data = client.get(
+        "/api/v1/stats/summary?source=lichess_online&severity=blunder"
+    ).json()
+    assert data["total_games"] == 2
+    assert data["total_mistakes"] == 1
+
+
+def test_breakdown_honors_filters(client, db) -> None:
+    _seed_filterable(db)
+    data = client.get(
+        "/api/v1/stats/breakdown?by=month&source=lichess_online"
+    ).json()
+    item_map = {row["label"]: row["count"] for row in data["items"]}
+    assert item_map == {"2025-05": 2, "2025-06": 1}
+
+
+def test_prescription_honors_filters(client, db) -> None:
+    _seed_filterable(db)
+    data = client.get(
+        "/api/v1/stats/training-prescription?color=white"
+    ).json()
+    assert data["classified_mistakes"] == 3
+    cells = {(i["step"], i["awareness"]) for i in data["items"]}
+    assert (2, "didnt_see_it") not in cells  # the black-game mistake
+
+
+def test_stats_reject_invalid_filter_values(client) -> None:
+    assert client.get("/api/v1/stats/summary?speed=hyperbullet").status_code == 422
+    assert client.get("/api/v1/stats/summary?color=green").status_code == 422
+    assert client.get("/api/v1/stats/summary?severity=catastrophe").status_code == 422

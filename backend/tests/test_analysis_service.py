@@ -12,7 +12,6 @@ from backend.app.services.analysis import (
     analyze_pending,
     compute_time_spent_ms,
     is_user_move,
-    parse_time_control,
 )
 
 
@@ -80,19 +79,7 @@ def user_and_game(db_session: Session) -> tuple[User, Game]:
 
 
 # ---- Pure helpers --------------------------------------------------------
-
-def test_parse_time_control_standard_formats() -> None:
-    assert parse_time_control("300+0") == (300, 0)
-    assert parse_time_control("60+30") == (60, 30)
-    assert parse_time_control("5400+30") == (5400, 30)
-
-
-def test_parse_time_control_returns_none_for_unparseable() -> None:
-    assert parse_time_control(None) == (None, None)
-    assert parse_time_control("") == (None, None)
-    assert parse_time_control("OTB") == (None, None)
-    assert parse_time_control("1/86400+0") == (None, None)
-
+# (parse_time_control tests live in test_time_control.py with the helper.)
 
 # FENs after white's / black's move from the standard start (mover = the
 # opposite of the side-to-move field).
@@ -312,9 +299,3 @@ async def test_analyze_pending_force_reruns_analyzed_games(
     assert forced[0].skipped is False
     # analyze_game is idempotent — same position count as the first run.
     assert forced[0].positions_created == 8
-
-
-def test_parse_time_control_accepts_bare_seconds() -> None:
-    # Some sources record just the base time, no increment.
-    assert parse_time_control("600") == (600, 0)
-    assert parse_time_control(" 300 ") == (300, 0)

@@ -46,29 +46,49 @@ export interface Breakdown {
   items: BreakdownItem[]
 }
 
-export function useSummary() {
+// Shared filters accepted by every /stats/* endpoint (F4). Dates are
+// YYYY-MM-DD strings; omitted/empty fields mean "no filter" (toQuery drops
+// them). Objects hash stably in TanStack Query keys, so passing the record
+// straight into queryKey gives correct per-slice caching.
+export interface StatsFilters {
+  from?: string
+  to?: string
+  source?: string
+  color?: string
+  severity?: string
+  speed?: string
+}
+
+const NO_FILTERS: StatsFilters = {}
+
+export function useSummary(filters: StatsFilters = NO_FILTERS) {
   return useQuery({
-    queryKey: ['stats', 'summary'] as const,
-    queryFn: ({ signal }) => apiFetch<StatsSummary>('/stats/summary', { signal }),
+    queryKey: ['stats', 'summary', filters] as const,
+    queryFn: ({ signal }) =>
+      apiFetch<StatsSummary>(`/stats/summary${toQuery({ ...filters })}`, {
+        signal,
+      }),
   })
 }
 
-export function usePrescription(top = 3) {
+export function usePrescription(top = 3, filters: StatsFilters = NO_FILTERS) {
   return useQuery({
-    queryKey: ['stats', 'prescription', top] as const,
+    queryKey: ['stats', 'prescription', top, filters] as const,
     queryFn: ({ signal }) =>
       apiFetch<Prescription>(
-        `/stats/training-prescription${toQuery({ top })}`,
+        `/stats/training-prescription${toQuery({ top, ...filters })}`,
         { signal },
       ),
   })
 }
 
-export function useBreakdown(by: string) {
+export function useBreakdown(by: string, filters: StatsFilters = NO_FILTERS) {
   return useQuery({
-    queryKey: ['stats', 'breakdown', by] as const,
+    queryKey: ['stats', 'breakdown', by, filters] as const,
     queryFn: ({ signal }) =>
-      apiFetch<Breakdown>(`/stats/breakdown${toQuery({ by })}`, { signal }),
+      apiFetch<Breakdown>(`/stats/breakdown${toQuery({ by, ...filters })}`, {
+        signal,
+      }),
   })
 }
 

@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.chess_utils import phase, winrate
+from backend.app.chess_utils.time_control import parse_time_control
 from backend.app.models import AppSettings, Game, Mistake, Position
 from backend.app.services.app_settings import get_app_settings
 
@@ -163,9 +164,7 @@ def detect_mistakes(session: Session, game: Game) -> DetectionResult:
     by_ply: dict[int, Position] = {p.ply: p for p in positions}
 
     # Time-control inputs (initial_seconds is needed for the clock-based
-    # time-pressure rule; defer parsing to the analysis service helper).
-    from backend.app.services.analysis import parse_time_control
-
+    # time-pressure rule).
     initial_seconds, _ = parse_time_control(game.time_control)
     median_user_move_ms = _median_user_move_time_ms(positions)
 

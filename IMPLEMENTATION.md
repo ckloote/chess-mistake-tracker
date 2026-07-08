@@ -334,6 +334,7 @@ This phase is optional and should be skipped unless the developer has a clear ne
 ## Post-MVP backlog (do not implement yet)
 
 - ~~Per-game refresh~~ **(done 2026-07-06)**. `fetch_game_by_id` implemented in both sources (protocol now takes `user` — needed for `user_color`) + `POST /games/{id}/refresh`. Closes the DESIGN.md "needs Lichess analysis → request analysis → refresh → processable" loop; also un-freezes study chapters that grow after import.
+- ~~Filtered analytics (CODE_REVIEW.md F4)~~ **(done 2026-07-07)**. Shared `StatFilters` (`from`/`to`, `source`, `color`, `severity`, `speed`) across all `/stats/*` endpoints; speed bucketed from TimeControl (`chess_utils/time_control.py`); filter bar on /stats with URL state.
 - ~~`StockfishLocalAnalyzer`~~ **(done)**. Implemented as the canonical per-position analyzer (local-first `M_best`, the `/analysis/position` endpoint behind the Explore board, and the Step-2 material-threat probe). Still outstanding from the original scope: using it for *whole-game* analysis so `has_evals=false` games are processable without requesting Lichess analysis first (`analyze_game` is the remaining gap).
 - `ChessComSource`. Implement the protocol. Likely needs a separate eval analyzer because chess.com's PGN doesn't include comparable engine evals — Stockfish-local makes this much easier.
 - Drill mode: re-present mistake positions to the user as puzzles after a delay; track recurrence.

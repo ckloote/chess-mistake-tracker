@@ -90,6 +90,7 @@ def make_game(
     played_at: datetime | None = None,
     has_evals: bool = True,
     analyzed: bool = False,
+    time_control: str | None = "300+0",
 ) -> Game:
     game = Game(
         user_id=user.id,
@@ -99,7 +100,7 @@ def make_game(
         white="alice" if user_color == "black" else user.lichess_username,
         black=user.lichess_username if user_color == "black" else "alice",
         result=result,
-        time_control="300+0",
+        time_control=time_control,
         played_at=played_at or datetime(2025, 6, 1, tzinfo=timezone.utc),
         pgn="[Event \"Test\"]\n\n1. e4 *\n",
         has_evals=has_evals,

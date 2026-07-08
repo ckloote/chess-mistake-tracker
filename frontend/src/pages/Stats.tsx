@@ -9,12 +9,14 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { useUrlState } from '../hooks/useUrlState'
 import {
   AWARENESS_LABELS,
   STEP_LABELS,
   useBreakdown,
   useSummary,
   type BreakdownItem,
+  type StatsFilters,
 } from '../api/stats'
 
 const TOOLTIP_STYLE = {
@@ -37,43 +39,95 @@ const TIME_LABELS: Record<string, string> = {
 
 const AWARENESS_COLS = ['didnt_see_it', 'got_it_wrong'] as const
 
+// All-empty defaults: the unfiltered page is the canonical URL (no params).
+const FILTER_DEFAULTS = {
+  from: '',
+  to: '',
+  source: '',
+  color: '',
+  severity: '',
+  speed: '',
+} as const
+
+type FilterKey = keyof typeof FILTER_DEFAULTS
+
+function toApiFilters(s: Record<FilterKey, string>): StatsFilters {
+  const out: StatsFilters = {}
+  if (s.from) out.from = s.from
+  if (s.to) out.to = s.to
+  if (s.source) out.source = s.source
+  if (s.color) out.color = s.color
+  if (s.severity) out.severity = s.severity
+  if (s.speed) out.speed = s.speed
+  return out
+}
+
 export function Stats() {
-  const summaryQuery = useSummary()
-  const cross = useBreakdown('step_x_awareness')
-  const phase = useBreakdown('phase')
-  const timePressure = useBreakdown('time_pressure')
-  const month = useBreakdown('month')
+  const [filters, setFilters] = useUrlState<FilterKey>(FILTER_DEFAULTS)
+  const apiFilters = toApiFilters(filters)
+  const filtersActive = Object.keys(apiFilters).length > 0
+
+  const summaryQuery = useSummary(apiFilters)
+  const cross = useBreakdown('step_x_awareness', apiFilters)
+  const phase = useBreakdown('phase', apiFilters)
+  const timePressure = useBreakdown('time_pressure', apiFilters)
+  const month = useBreakdown('month', apiFilters)
+
+  const s = summaryQuery.data
+  const meta = summaryQuery.isPending
+    ? 'loading…'
+    : s
+      ? `${s.total_games} ${s.total_games === 1 ? 'game' : 'games'} · ` +
+        `${s.total_mistakes} ${s.total_mistakes === 1 ? 'mistake' : 'mistakes'}`
+      : ''
+
+  const filterBar = (
+    <FilterBar
+      filters={filters}
+      setFilters={setFilters}
+      filtersActive={filtersActive}
+    />
+  )
 
   if (summaryQuery.isPending) {
     return (
-      <StatsShell>
+      <StatsShell meta={meta}>
+        {filterBar}
         <p className="muted">Loading…</p>
       </StatsShell>
     )
   }
-  if (summaryQuery.isError || !summaryQuery.data) {
+  if (summaryQuery.isError || !s) {
     return (
-      <StatsShell>
+      <StatsShell meta={meta}>
+        {filterBar}
         <div className="error">
           Failed to load stats: {String(summaryQuery.error)}
         </div>
       </StatsShell>
     )
   }
-  const s = summaryQuery.data
   if (s.total_mistakes === 0) {
     return (
-      <StatsShell>
+      <StatsShell meta={meta}>
+        {filterBar}
         <div className="placeholder">
-          <span className="placeholder-tag">No data yet</span>
-          <p>Analyze and classify some games to see your patterns here.</p>
+          {filtersActive ? (
+            <p>No mistakes match these filters.</p>
+          ) : (
+            <>
+              <span className="placeholder-tag">No data yet</span>
+              <p>Analyze and classify some games to see your patterns here.</p>
+            </>
+          )}
         </div>
       </StatsShell>
     )
   }
 
   return (
-    <StatsShell>
+    <StatsShell meta={meta}>
+      {filterBar}
       <section className="dash-section">
         <h2>Where your mistakes cluster</h2>
         <p className="dash-section-note">
@@ -114,6 +168,116 @@ export function Stats() {
         <MonthChart items={month.data?.items ?? []} />
       </section>
     </StatsShell>
+  )
+}
+
+// ---- Filter bar -------------------------------------------------------------
+
+function FilterBar({
+  filters,
+  setFilters,
+  filtersActive,
+}: {
+  filters: Record<FilterKey, string>
+  setFilters: (patch: Partial<Record<FilterKey, string>>) => void
+  filtersActive: boolean
+}) {
+  return (
+    <div className="filters">
+      <div className="filter-group">
+        <label htmlFor="sf-from">From</label>
+        <input
+          id="sf-from"
+          type="date"
+          value={filters.from}
+          onChange={(e) => setFilters({ from: e.target.value })}
+        />
+      </div>
+
+      <div className="filter-group">
+        <label htmlFor="sf-to">To</label>
+        <input
+          id="sf-to"
+          type="date"
+          value={filters.to}
+          onChange={(e) => setFilters({ to: e.target.value })}
+        />
+      </div>
+
+      <div className="filter-group">
+        <label htmlFor="sf-source">Source</label>
+        <select
+          id="sf-source"
+          value={filters.source}
+          onChange={(e) => setFilters({ source: e.target.value })}
+        >
+          <option value="">Any</option>
+          <option value="lichess_online">Lichess games</option>
+          <option value="lichess_study">Lichess studies</option>
+        </select>
+      </div>
+
+      <div className="filter-group">
+        <label htmlFor="sf-color">Color</label>
+        <select
+          id="sf-color"
+          value={filters.color}
+          onChange={(e) => setFilters({ color: e.target.value })}
+        >
+          <option value="">Any</option>
+          <option value="white">White</option>
+          <option value="black">Black</option>
+        </select>
+      </div>
+
+      <div className="filter-group">
+        <label htmlFor="sf-severity">Severity</label>
+        <select
+          id="sf-severity"
+          value={filters.severity}
+          onChange={(e) => setFilters({ severity: e.target.value })}
+        >
+          <option value="">Any</option>
+          <option value="blunder">Blunder ??</option>
+          <option value="mistake">Mistake ?</option>
+          <option value="inaccuracy">Inaccuracy ?!</option>
+        </select>
+      </div>
+
+      <div className="filter-group">
+        <label htmlFor="sf-speed">Speed</label>
+        <select
+          id="sf-speed"
+          value={filters.speed}
+          onChange={(e) => setFilters({ speed: e.target.value })}
+        >
+          <option value="">Any</option>
+          <option value="bullet">Bullet</option>
+          <option value="blitz">Blitz</option>
+          <option value="rapid">Rapid</option>
+          <option value="classical">Classical</option>
+          <option value="unknown">No clock (OTB)</option>
+        </select>
+      </div>
+
+      {filtersActive && (
+        <button
+          type="button"
+          onClick={() =>
+            setFilters({
+              from: '',
+              to: '',
+              source: '',
+              color: '',
+              severity: '',
+              speed: '',
+            })
+          }
+        >
+          Reset
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -310,7 +474,7 @@ function MonthChart({ items }: { items: BreakdownItem[] }) {
   )
 }
 
-function StatsShell({ children }: { children: ReactNode }) {
+function StatsShell({ meta, children }: { meta?: string; children: ReactNode }) {
   return (
     <div>
       <div className="page-header">
@@ -318,6 +482,7 @@ function StatsShell({ children }: { children: ReactNode }) {
           <span className="eyebrow">Analysis</span>
           <h1>Patterns</h1>
         </div>
+        {meta && <span className="page-header-meta">{meta}</span>}
       </div>
       {children}
     </div>

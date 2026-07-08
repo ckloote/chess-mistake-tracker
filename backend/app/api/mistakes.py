@@ -1,9 +1,10 @@
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.api.dates import end_of_day, start_of_day
 from backend.app.db import get_db
 from backend.app.models import Game, Mistake, Position
 from backend.app.schemas.games import GameOut, PositionOut
@@ -15,14 +16,6 @@ from backend.app.schemas.mistakes import (
 )
 
 router = APIRouter(prefix="/mistakes", tags=["mistakes"])
-
-
-def _start_of_day(d: date) -> datetime:
-    return datetime.combine(d, time.min, tzinfo=timezone.utc)
-
-
-def _end_of_day(d: date) -> datetime:
-    return datetime.combine(d, time.max, tzinfo=timezone.utc)
 
 
 @router.get("", response_model=MistakeListOut)
@@ -53,9 +46,9 @@ def list_mistakes(
     if unclassified_only:
         stmt = stmt.where(Mistake.classified_at.is_(None))
     if from_ is not None:
-        stmt = stmt.where(Game.played_at >= _start_of_day(from_))
+        stmt = stmt.where(Game.played_at >= start_of_day(from_))
     if to is not None:
-        stmt = stmt.where(Game.played_at <= _end_of_day(to))
+        stmt = stmt.where(Game.played_at <= end_of_day(to))
 
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total = db.scalar(count_stmt) or 0

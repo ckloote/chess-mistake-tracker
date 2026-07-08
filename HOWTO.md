@@ -62,7 +62,9 @@ it defended".
    sure what the best move actually accomplished.
 3. **Read the prescription** (Dashboard). The top cell of the Step × Awareness
    matrix is your highest-leverage training target; the Stats page shows the
-   full distribution and trends.
+   full distribution and trends. Use the Stats filter bar to slice by date,
+   source, color, severity, or speed — "am I a different player in blitz than
+   OTB?" is one click each way.
 4. **Re-tune occasionally** (Settings). If the queue fills with noise, raise
    the thresholds or tighten the still-winning suppression, then re-analyze —
    classifications survive.
