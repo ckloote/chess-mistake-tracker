@@ -51,10 +51,15 @@ export function ClassificationForm({
   const notesRef = useRef<HTMLTextAreaElement>(null)
 
   // Reset the form when the mistake id changes — moving between mistakes
-  // should NOT carry the previous mistake's local state forward.
-  useEffect(() => {
+  // should NOT carry the previous mistake's local state forward. Render-time
+  // state adjustment (react.dev "adjusting state when props change") rather
+  // than an effect: the reset applies in the same render, no flash of stale
+  // form.
+  const [syncedId, setSyncedId] = useState(mistake.id)
+  if (mistake.id !== syncedId) {
+    setSyncedId(mistake.id)
     setState(initialState(mistake))
-  }, [mistake.id])
+  }
 
   // The suggested step is only meaningful when the user hasn't picked
   // anything yet (i.e. classified_step is null). Once they classify it,
