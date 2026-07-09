@@ -71,8 +71,12 @@ def client(session_factory: sessionmaker[Session]) -> Iterator[TestClient]:
 
 # ---- seeding helpers --------------------------------------------------------
 
-def make_user(db: Session, username: str = "configured_user") -> User:
-    user = User(lichess_username=username)
+def make_user(
+    db: Session,
+    username: str = "configured_user",
+    chesscom_username: str | None = None,
+) -> User:
+    user = User(lichess_username=username, chesscom_username=chesscom_username)
     db.add(user)
     db.commit()
     db.refresh(user)

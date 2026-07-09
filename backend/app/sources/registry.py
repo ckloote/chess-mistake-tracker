@@ -11,11 +11,13 @@ from collections.abc import Callable
 
 from backend.app.models import AppSettings
 from backend.app.sources.base import GameSource
+from backend.app.sources.chesscom import ChessComSource
 from backend.app.sources.lichess_online import LichessOnlineSource
 from backend.app.sources.lichess_study import LichessStudySource
 
 _REGISTRY: dict[str, Callable[[AppSettings], GameSource]] = {
     LichessOnlineSource.name: lambda _settings: LichessOnlineSource(),
+    ChessComSource.name: lambda _settings: ChessComSource(),
     LichessStudySource.name: lambda settings: LichessStudySource(
         study_ids=list(settings.lichess_study_ids),
         aliases=list(settings.study_player_aliases),

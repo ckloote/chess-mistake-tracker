@@ -12,6 +12,9 @@ class SettingsOut(BaseModel):
     # Read-only capability flag: whether a local Stockfish binary resolves.
     # Drives UI copy — eval-less games are analyzable locally when true.
     stockfish_available: bool = False
+    # Lives on the User row, not AppSettings; editable via PATCH. None until
+    # seeded (CHESSCOM_USERNAME on first run) or set on the settings page.
+    chesscom_username: str | None = None
 
     winrate_inaccuracy: float
     winrate_mistake: float
@@ -36,6 +39,16 @@ class SettingsUpdate(BaseModel):
     suppress_above_after: float | None = Field(default=None, ge=0, le=100)
     lichess_study_ids: list[str] | None = None
     study_player_aliases: list[str] | None = None
+    # Written to the User row (api/settings.py), not AppSettings. Empty/blank
+    # clears the username (stored as NULL).
+    chesscom_username: str | None = None
+
+    @field_validator("chesscom_username")
+    @classmethod
+    def _strip_chesscom_username(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return v.strip() or None
 
     @field_validator("lichess_study_ids")
     @classmethod

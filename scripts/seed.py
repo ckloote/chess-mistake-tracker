@@ -1,4 +1,9 @@
-"""Seed the single user from configured LICHESS_USERNAME. Idempotent."""
+"""Seed the single user from configured LICHESS_USERNAME. Idempotent.
+
+CHESSCOM_USERNAME seeds users.chesscom_username only while the column is
+empty — once set (here or via the Settings page), the DB value governs and
+the env is never consulted again (same semantics as the AppSettings seed).
+"""
 import sys
 
 from sqlalchemy import select
@@ -15,17 +20,21 @@ def main() -> int:
         return 1
 
     with SessionLocal() as session:
-        existing = session.scalar(
+        user = session.scalar(
             select(User).where(User.lichess_username == settings.lichess_username)
         )
-        if existing is not None:
-            print(f"User '{settings.lichess_username}' already exists (id={existing.id}).")
-            return 0
+        if user is None:
+            user = User(lichess_username=settings.lichess_username)
+            session.add(user)
+            session.commit()
+            print(f"Created user '{settings.lichess_username}' (id={user.id}).")
+        else:
+            print(f"User '{settings.lichess_username}' already exists (id={user.id}).")
 
-        user = User(lichess_username=settings.lichess_username)
-        session.add(user)
-        session.commit()
-        print(f"Created user '{settings.lichess_username}' (id={user.id}).")
+        if settings.chesscom_username and not user.chesscom_username:
+            user.chesscom_username = settings.chesscom_username
+            session.commit()
+            print(f"Seeded chess.com username '{settings.chesscom_username}'.")
         return 0
 
 

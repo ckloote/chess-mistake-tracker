@@ -36,4 +36,11 @@ def test_speed_of_unknown_for_unparseable() -> None:
     assert speed_of(None) == "unknown"
     assert speed_of("") == "unknown"
     assert speed_of("-") == "unknown"
-    assert speed_of("1/86400") == "unknown"  # correspondence
+
+
+def test_speed_of_correspondence_for_daily_form() -> None:
+    # chess.com daily games: moves-per-period / seconds-per-period.
+    assert speed_of("1/259200") == "correspondence"
+    assert speed_of("1/86400") == "correspondence"
+    # The per-move clock math stays undefined for these.
+    assert parse_time_control("1/259200") == (None, None)

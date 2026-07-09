@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from backend.app.models import AppSettings
+from backend.app.sources.chesscom import ChessComSource
 from backend.app.sources.lichess_online import LichessOnlineSource
 from backend.app.sources.lichess_study import LichessStudySource
 from backend.app.sources.registry import get_source, known_sources
@@ -57,7 +58,12 @@ def test_online_source_ignores_settings() -> None:
     assert isinstance(source, LichessOnlineSource)
 
 
+def test_chesscom_source_ignores_settings() -> None:
+    source = get_source("chesscom", _settings_row())
+    assert isinstance(source, ChessComSource)
+
+
 def test_unknown_source_raises_key_error() -> None:
     with pytest.raises(KeyError):
-        get_source("chesscom", _settings_row())
-    assert known_sources() == ["lichess_online", "lichess_study"]
+        get_source("chess24", _settings_row())
+    assert known_sources() == ["chesscom", "lichess_online", "lichess_study"]

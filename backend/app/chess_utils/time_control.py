@@ -10,10 +10,13 @@ from __future__ import annotations
 import re
 
 _TC_RE = re.compile(r"^\s*(\d+)\s*(?:\+\s*(\d+))?\s*$")
+# Daily/correspondence form: moves per period "/" seconds per period, e.g.
+# chess.com's "1/259200" (one move per three days).
+_DAILY_TC_RE = re.compile(r"^\s*\d+\s*/\s*\d+\s*$")
 
 # Valid `speed_of` outputs, in fastest-first order (drives API validation
 # and the frontend select).
-SPEEDS = ("bullet", "blitz", "rapid", "classical", "unknown")
+SPEEDS = ("bullet", "blitz", "rapid", "classical", "correspondence", "unknown")
 
 
 def parse_time_control(tc: str | None) -> tuple[int | None, int | None]:
@@ -31,7 +34,10 @@ def parse_time_control(tc: str | None) -> tuple[int | None, int | None]:
 def speed_of(tc: str | None) -> str:
     """Speed bucket for a TimeControl string. Thresholds follow Lichess:
     <3 min estimated -> bullet, <8 min -> blitz, <25 min -> rapid, else
-    classical. Unparseable (OTB studies, correspondence) -> "unknown"."""
+    classical. The daily form `moves/seconds` (chess.com correspondence)
+    -> "correspondence"; anything else unparseable (OTB studies) -> "unknown"."""
+    if tc and _DAILY_TC_RE.match(tc):
+        return "correspondence"
     initial, increment = parse_time_control(tc)
     if initial is None:
         return "unknown"

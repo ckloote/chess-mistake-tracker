@@ -19,6 +19,7 @@ interface FormState {
   suppress_above_after: string
   study_ids: string // comma-separated in the UI
   aliases: string
+  chesscom_username: string
 }
 
 function toForm(s: AppSettings): FormState {
@@ -31,6 +32,7 @@ function toForm(s: AppSettings): FormState {
     suppress_above_after: String(s.suppress_above_after),
     study_ids: s.lichess_study_ids.join(', '),
     aliases: s.study_player_aliases.join(', '),
+    chesscom_username: s.chesscom_username ?? '',
   }
 }
 
@@ -62,6 +64,7 @@ function toPayload(form: FormState): SettingsUpdate | { error: string } {
     ...numbers,
     lichess_study_ids: splitCsv(form.study_ids),
     study_player_aliases: splitCsv(form.aliases),
+    chesscom_username: form.chesscom_username.trim() || null,
   }
 }
 
@@ -206,6 +209,20 @@ export function Settings() {
             <input id="s-username" type="text" value={username ?? ''} disabled />
             <span className="settings-hint">
               From <code>.env</code> — changing it means re-seeding the database.
+            </span>
+          </div>
+          <div className="filter-group">
+            <label htmlFor="s-chesscom">chess.com username</label>
+            <input
+              id="s-chesscom"
+              type="text"
+              value={form.chesscom_username}
+              placeholder="e.g. hikaru"
+              onChange={(e) => set({ chesscom_username: e.target.value })}
+            />
+            <span className="settings-hint">
+              Used by the chess.com import; seeded from <code>.env</code> on
+              first run.
             </span>
           </div>
           <div className="filter-group">

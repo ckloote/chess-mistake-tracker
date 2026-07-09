@@ -5,6 +5,7 @@ import { apiFetch } from './client'
 export interface AppSettings {
   lichess_username: string // read-only; changing it means re-seeding
   stockfish_available: boolean // read-only capability flag from the host
+  chesscom_username: string | null // editable; drives the chess.com import
   winrate_inaccuracy: number
   winrate_mistake: number
   winrate_blunder: number

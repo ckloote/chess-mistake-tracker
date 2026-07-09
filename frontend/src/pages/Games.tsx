@@ -51,24 +51,34 @@ interface GameStatus {
 }
 
 function gameStatus(
-  g: { has_evals: boolean; analyzed_at: string | null },
+  g: { source: string; has_evals: boolean; analyzed_at: string | null },
   engineAvailable: boolean,
 ): GameStatus {
   if (g.analyzed_at) return { label: 'Analyzed', className: 'analyzed' }
   if (g.has_evals) return { label: 'Pending', className: 'pending' }
   // No PGN evals — but a local Stockfish can produce them during analysis.
   if (engineAvailable) return { label: 'Pending (local engine)', className: 'pending' }
+  // chess.com has no request-analysis flow; the only eval path is local.
+  if (g.source === 'chesscom') return { label: 'Needs local engine', className: 'needs' }
   return { label: 'Needs Lichess analysis', className: 'needs' }
 }
 
-// Link to the game at its source — for online games this is also where the
-// user clicks "Request computer analysis" before refreshing.
-function lichessUrl(g: Game): string {
+// Link to the game at its source — for Lichess online games this is also
+// where the user clicks "Request computer analysis" before refreshing.
+function sourceUrl(g: Game): string {
   if (g.source === 'lichess_study') {
     const [studyId, chapterId] = g.source_game_id.split(':')
     return `https://lichess.org/study/${studyId}/${chapterId ?? ''}`
   }
+  if (g.source === 'chesscom') {
+    // source_game_id keeps the live|daily segment, e.g. "live/747757185".
+    return `https://www.chess.com/game/${g.source_game_id}`
+  }
   return `https://lichess.org/${g.source_game_id}`
+}
+
+function sourceLabel(source: string): string {
+  return source === 'chesscom' ? 'chess.com' : source.replace('lichess_', '')
 }
 
 export function Games() {
@@ -90,8 +100,8 @@ export function Games() {
     const limit = Number.parseInt(importMax, 10)
     importGames.mutate({
       source: importSource,
-      // Studies have no meaningful limit; only send one for online games.
-      ...(importSource === 'lichess_online' && Number.isFinite(limit) && limit > 0
+      // Studies have no meaningful limit; send one for the online sources.
+      ...(importSource !== 'lichess_study' && Number.isFinite(limit) && limit > 0
         ? { limit }
         : {}),
     })
@@ -130,9 +140,10 @@ export function Games() {
           >
             <option value="lichess_online">Lichess games</option>
             <option value="lichess_study">Lichess studies</option>
+            <option value="chesscom">chess.com games</option>
           </select>
         </div>
-        {importSource === 'lichess_online' && (
+        {importSource !== 'lichess_study' && (
           <div className="filter-group">
             <label htmlFor="i-max">Max games</label>
             <input
@@ -187,6 +198,7 @@ export function Games() {
             <option value="">All</option>
             <option value="lichess_online">Online</option>
             <option value="lichess_study">Study</option>
+            <option value="chesscom">chess.com</option>
           </select>
         </div>
 
@@ -273,7 +285,8 @@ export function Games() {
                 }}
                 className="muted"
               >
-                Use the Import controls above to pull your games from Lichess.
+                Use the Import controls above to pull your games from Lichess
+                or chess.com.
               </p>
             </div>
           ) : (
@@ -314,9 +327,7 @@ export function Games() {
                           {g.user_color}
                         </span>
                       </td>
-                      <td className="cell-source">
-                        {g.source.replace('lichess_', '')}
-                      </td>
+                      <td className="cell-source">{sourceLabel(g.source)}</td>
                       <td>
                         <span className={`status-pill ${status.className}`}>
                           {status.label}
@@ -337,11 +348,13 @@ export function Games() {
                               : 'Analyze'}
                           </button>
                         )}
-                        {!g.has_evals && !g.analyzed_at && (
+                        {/* The Request ↗ / Refresh pair is the Lichess-eval
+                            workflow; chess.com has no equivalent. */}
+                        {!g.has_evals && !g.analyzed_at && g.source !== 'chesscom' && (
                           <>
                             <a
                               className="row-link"
-                              href={lichessUrl(g)}
+                              href={sourceUrl(g)}
                               target="_blank"
                               rel="noreferrer"
                               title="Open on Lichess and click 'Request a computer analysis', then Refresh here"

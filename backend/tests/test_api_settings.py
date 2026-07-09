@@ -57,6 +57,47 @@ def test_patch_settings_rejects_malformed_study_id(client) -> None:
     assert "Invalid Lichess study id" in response.text
 
 
+def test_get_settings_tolerates_unseeded_user(client) -> None:
+    """The settings page must load before `make seed` has run — the
+    chess.com username just reads as null."""
+    response = client.get("/api/v1/settings")
+    assert response.status_code == 200
+    assert response.json()["chesscom_username"] is None
+
+
+def test_patch_chesscom_username_roundtrip_and_clearing(client, db) -> None:
+    """chesscom_username lives on the User row, not AppSettings; PATCH writes
+    it there, GET reads it back, and blank/null clears it."""
+    from backend.app.config import Settings, get_settings
+    from backend.app.main import app
+    from backend.tests.conftest import make_user
+
+    make_user(db, "cfg_user")
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        lichess_username="cfg_user", _env_file=None
+    )
+    try:
+        response = client.patch(
+            "/api/v1/settings", json={"chesscom_username": "  SomePlayer  "}
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["chesscom_username"] == "SomePlayer"  # whitespace stripped
+        assert client.get("/api/v1/settings").json()["chesscom_username"] == "SomePlayer"
+
+        # Empty string clears (stored as NULL).
+        response = client.patch("/api/v1/settings", json={"chesscom_username": ""})
+        assert response.status_code == 200
+        assert response.json()["chesscom_username"] is None
+        assert client.get("/api/v1/settings").json()["chesscom_username"] is None
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
+
+
+def test_patch_chesscom_username_400_when_user_not_seeded(client) -> None:
+    response = client.patch("/api/v1/settings", json={"chesscom_username": "x"})
+    assert response.status_code == 400
+
+
 def test_import_study_source_uses_db_settings_not_env(client, db) -> None:
     """End-to-end B4 wiring: with the AppSettings row holding no study ids,
     POST /games/import for the study source returns 0 imported without any

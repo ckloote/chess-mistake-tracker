@@ -16,6 +16,9 @@ class Settings(BaseSettings):
 
     chess_db_path: str = "./data/chess.db"
     lichess_username: str = ""
+    # Seeds users.chesscom_username on first run only (scripts/seed.py); after
+    # that the DB governs and edits happen via the Settings page.
+    chesscom_username: str = ""
     # NoDecode skips pydantic-settings' default JSON decode of complex env types,
     # so the comma-separated string falls through to the validator below.
     # NOTE: study ids and aliases here only SEED the AppSettings DB row on

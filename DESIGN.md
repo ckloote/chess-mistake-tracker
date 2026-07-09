@@ -2,7 +2,7 @@
 
 ## Goals
 
-1. Ingest the user's Lichess games (online play) and Lichess studies (where OTB games are stored).
+1. Ingest the user's Lichess games (online play), Lichess studies (where OTB games are stored), and chess.com games.
 2. For each game, identify positions where the user's win% dropped by a configurable threshold ("mistakes").
 3. Suggest a likely Layer A bucket for each mistake using engine + position heuristics.
 4. Provide a review UI for the user to confirm/override the Layer A suggestion and assign Layer B (Got It Wrong / Didn't See It) plus situational tags.
@@ -10,7 +10,6 @@
 
 ## Non-Goals (MVP)
 
-- chess.com support (planned post-MVP; sources are abstracted to enable it).
 - Local engine analysis (planned post-MVP; analyzers are abstracted to enable it).
 - Multi-user support (single-user only; data model leaves room).
 - Mobile-native UI (API is designed to support it later).
@@ -44,7 +43,7 @@
 │ Lichess     │      │ Lichess PGN   │
 │ Lichess     │      │ eval parser   │
 │  Study      │      │ (cloud eval   │
-│ [chess.com] │      │  fallback)    │
+│ chess.com   │      │  fallback)    │
 └─────────────┘      │ [Stockfish]   │
                      └───────────────┘
 ```
@@ -74,7 +73,7 @@ Single row in MVP, but the schema is multi-user-safe.
 |---|---|---|
 | id | int PK | |
 | lichess_username | text unique | required |
-| chesscom_username | text nullable | for future |
+| chesscom_username | text nullable | seeded from `CHESSCOM_USERNAME` on first run; editable on the settings page |
 | created_at | timestamp | |
 
 ### `games`
@@ -84,7 +83,7 @@ One row per unique game ingested.
 |---|---|---|
 | id | int PK | |
 | user_id | int FK | |
-| source | text | `lichess_online`, `lichess_study` (future: `chesscom`) |
+| source | text | `lichess_online`, `lichess_study`, `chesscom` |
 | source_game_id | text | Lichess game ID, or `studyId:chapterId` |
 | user_color | text | `white` or `black` |
 | white | text | name |
@@ -305,10 +304,12 @@ anything else → 502).
 - `LichessOnlineSource`: hits `GET /api/games/user/{username}?evals=true&clocks=true&pgnInJson=false&max=N`. Streams NDJSON or PGN.
 - `LichessStudySource`: takes a list of study IDs (from the `AppSettings` DB row — the source registry passes them in, and `PATCH /settings` edits them; the `LICHESS_STUDY_IDS` env var only seeds the row on first run), fetches `GET /api/study/{id}.pgn`, splits into chapters, and emits one `GameRecord` per chapter where the user is a player.
 
-### Future implementations
-
-- `ChessComSource`: hits chess.com's monthly archives API.
-- The interface assumption "PGN is the canonical form" should hold for chess.com.
+- `ChessComSource`: walks chess.com's published monthly archives (`GET /pub/player/{u}/games/archives`, then one GET per month) newest-first and emits one `GameRecord` per standard-rules game (variants like chess960 are skipped; custom-FEN starts are fine). The username comes from `users.chesscom_username` (editable on the settings page; `CHESSCOM_USERNAME` seeds it on first run) — an empty username raises `SourceMisconfigured`, surfaced as a 400. The interface assumption "PGN is the canonical form" holds: chess.com PGNs carry `UTCDate`/`UTCTime`/Elos/`Result` and `%clk` with fractional seconds, all parsed by the shared machinery. Notable properties:
+  - **Never any `%eval`** → records are always `has_evals=false`; local Stockfish (F3 whole-game analysis) is the only eval source for these games.
+  - `source_game_id` keeps the URL's type segment — `live/747757185` / `daily/747757185` — so the frontend can rebuild `https://www.chess.com/game/{id}` links.
+  - **Refresh is unsupported** (`fetch_game_by_id` raises `RefreshUnsupported` → 400): finished chess.com games are immutable and there is no request-analysis flow, so refresh has no purpose (and a real implementation would cost O(months) archive scans).
+  - Etiquette: requests are strictly serial (parallel fetches from one IP get 429) and carry a descriptive `User-Agent`.
+  - Daily/correspondence games import too; their `N/seconds` time control maps to the `correspondence` speed bucket (`speed_of`), while per-move clock math stays undefined for them.
 
 ## Engine / Analyzer Abstractions
 
@@ -385,7 +386,7 @@ All three accept the same optional filters, so any view can be sliced to answer 
 
 ### Settings
 
-- `GET /settings`, `PATCH /settings` — thresholds, suppression rules, study IDs, player aliases. The backing `AppSettings` row is the runtime source of truth: env vars (`LICHESS_STUDY_IDS`, `STUDY_PLAYER_ALIASES`, threshold defaults) seed it on first run and are never consulted again. The source registry builds `LichessStudySource` from this row at import time, so a PATCH takes effect on the next import without a restart. Study ids are validated at write time (8 alphanumeric chars → 422 otherwise). GET also carries two read-only context fields that aren't columns on the row: `lichess_username` (from the env) and `stockfish_available` (whether a local engine binary resolves — drives the "analyzable locally" UI copy).
+- `GET /settings`, `PATCH /settings` — thresholds, suppression rules, study IDs, player aliases. The backing `AppSettings` row is the runtime source of truth: env vars (`LICHESS_STUDY_IDS`, `STUDY_PLAYER_ALIASES`, threshold defaults) seed it on first run and are never consulted again. The source registry builds `LichessStudySource` from this row at import time, so a PATCH takes effect on the next import without a restart. Study ids are validated at write time (8 alphanumeric chars → 422 otherwise). GET also carries two read-only context fields that aren't columns on the row: `lichess_username` (from the env) and `stockfish_available` (whether a local engine binary resolves — drives the "analyzable locally" UI copy). `chesscom_username` also rides on GET/PATCH but lives on the **User row**, not `AppSettings` — it's editable (PATCH writes it through; blank clears it), and `CHESSCOM_USERNAME` only seeds it on first run.
 
 ## Frontend
 

@@ -28,10 +28,7 @@ import httpx
 
 from backend.app.models import User
 from backend.app.sources.base import GameRecord
-from backend.app.sources.lichess_online import (
-    _parse_int,
-    _parse_played_at,
-)
+from backend.app.sources.pgn_headers import parse_int_header, parse_played_at
 
 LICHESS_API_BASE = "https://lichess.org"
 log = logging.getLogger(__name__)
@@ -99,10 +96,10 @@ def _record_from_chapter(
         black=black,
         result=headers.get("Result", "*"),
         has_evals="[%eval " in pgn_text,
-        white_elo=_parse_int(headers.get("WhiteElo")),
-        black_elo=_parse_int(headers.get("BlackElo")),
+        white_elo=parse_int_header(headers.get("WhiteElo")),
+        black_elo=parse_int_header(headers.get("BlackElo")),
         time_control=headers.get("TimeControl") or None,
-        played_at=_parse_played_at(headers),
+        played_at=parse_played_at(headers),
     )
 
 

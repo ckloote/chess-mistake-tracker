@@ -227,3 +227,36 @@ def test_refresh_maps_upstream_404(client, db, monkeypatch) -> None:
 
 def test_refresh_404_when_game_missing(client) -> None:
     assert client.post("/api/v1/games/99999/refresh").status_code == 404
+
+
+# ---- chess.com source through the routes ------------------------------------
+
+def test_refresh_chesscom_game_is_400(client, db) -> None:
+    """Finished chess.com games are immutable and there's no request-analysis
+    flow — refresh maps RefreshUnsupported to a 400 explaining that."""
+    from backend.app.config import get_settings
+    from backend.app.main import app
+
+    user = make_user(db, chesscom_username="TestUser")
+    game = make_game(db, user, source="chesscom", source_game_id="live/140723958581")
+    app.dependency_overrides[get_settings] = _override_settings(user.lichess_username)
+    try:
+        response = client.post(f"/api/v1/games/{game.id}/refresh")
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
+    assert response.status_code == 400
+    assert "don't change after they finish" in response.json()["detail"]
+
+
+def test_import_chesscom_400_when_username_unset(client, db) -> None:
+    from backend.app.config import get_settings
+    from backend.app.main import app
+
+    user = make_user(db)  # no chesscom_username
+    app.dependency_overrides[get_settings] = _override_settings(user.lichess_username)
+    try:
+        response = client.post("/api/v1/games/import", json={"source": "chesscom"})
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
+    assert response.status_code == 400
+    assert "chess.com username" in response.json()["detail"]

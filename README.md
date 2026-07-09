@@ -1,6 +1,6 @@
 # Chess Mistake Tracker
 
-A personal chess analysis tool that ingests games from Lichess (online games and studies), identifies positions where the user's evaluation drops significantly, and supports a structured classification workflow for diagnosing recurring mistake patterns.
+A personal chess analysis tool that ingests games from Lichess (online games and studies) and chess.com, identifies positions where the user's evaluation drops significantly, and supports a structured classification workflow for diagnosing recurring mistake patterns.
 
 ## Why
 
@@ -33,7 +33,7 @@ This produces an 8-cell Layer A × Layer B matrix. Each cell maps to a different
 
 ## High-Level Architecture
 
-API-first. Backend is the source of truth and exposes a documented HTTP API. The web frontend is one consumer; future iOS, Electron, or CLI consumers would plug into the same API. All external dependencies (game source, engine) are abstracted behind interfaces so chess.com support and local Stockfish can be added without disturbing the rest of the system.
+API-first. Backend is the source of truth and exposes a documented HTTP API. The web frontend is one consumer; future iOS, Electron, or CLI consumers would plug into the same API. All external dependencies (game source, engine) are abstracted behind interfaces — that's how chess.com support and local Stockfish were added without disturbing the rest of the system.
 
 ## Tech Stack
 
@@ -88,7 +88,7 @@ Optional (recommended): install [Stockfish](https://stockfishchess.org/) (`apt i
 
 The daily loop, all reachable from the UI:
 
-1. **Import** — on the *Games* page pick "Lichess games" (with a max) or "Lichess studies" and click Import. Study IDs and the player aliases used to match your name in OTB chapters are edited on the *Settings* page (the `LICHESS_STUDY_IDS` / `STUDY_PLAYER_ALIASES` env vars only seed them on first run). Re-importing is idempotent — existing games are skipped, never overwritten.
+1. **Import** — on the *Games* page pick "Lichess games" (with a max), "Lichess studies", or "chess.com games" and click Import. Study IDs, the player aliases used to match your name in OTB chapters, and your chess.com username are edited on the *Settings* page (the `LICHESS_STUDY_IDS` / `STUDY_PLAYER_ALIASES` / `CHESSCOM_USERNAME` env vars only seed them on first run). Re-importing is idempotent — existing games are skipped, never overwritten. chess.com PGNs never carry engine evals, so analyzing those games requires local Stockfish.
 2. **Analyze** — "Analyze pending" processes every analyzable game: positions, mistake detection, and a suggested thinking-step per mistake. Games whose PGN carries `%eval` annotations use those; with local Stockfish installed, games without evals (OTB study chapters, unanalyzed online games) are evaluated locally — expect a few seconds per game.
 3. **Without Stockfish**, eval-less games show a *Needs Lichess analysis* status instead: click *Request ↗* to open the game on Lichess and request computer analysis there, then click *Refresh* to re-fetch it — the game becomes analyzable. (Both paths remain available when the engine is installed; Lichess's server analysis is deeper than the local default.)
 4. **Classify** — the *Mistakes* page is the queue. Each mistake gets a thinking step (1–4), an awareness call (*Got it wrong* / *Didn't see it*), optional tags and notes. Keyboard-first: `1–4`, `G`/`D`, `Enter` to save-and-advance. See [HOWTO.md](./HOWTO.md) for what the buckets mean.

@@ -214,6 +214,7 @@ function FilterBar({
           <option value="">Any</option>
           <option value="lichess_online">Lichess games</option>
           <option value="lichess_study">Lichess studies</option>
+          <option value="chesscom">chess.com</option>
         </select>
       </div>
 
@@ -256,6 +257,7 @@ function FilterBar({
           <option value="blitz">Blitz</option>
           <option value="rapid">Rapid</option>
           <option value="classical">Classical</option>
+          <option value="correspondence">Correspondence (daily)</option>
           <option value="unknown">No clock (OTB)</option>
         </select>
       </div>

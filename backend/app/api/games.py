@@ -7,9 +7,10 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.dates import end_of_day, start_of_day
+from backend.app.api.deps import get_configured_user
 from backend.app.config import Settings, get_settings
 from backend.app.db import get_db
-from backend.app.models import Game, Mistake, Position, User
+from backend.app.models import Game, Mistake, Position
 from backend.app.schemas.games import (
     AnalyzePendingResponse,
     AnalyzeResponse,
@@ -24,26 +25,12 @@ from backend.app.services.analysis import AnalysisResult, analyze_game, analyze_
 from backend.app.services.app_settings import get_app_settings
 from backend.app.services.ingestion import ingest, refresh_game
 from backend.app.services.local_engine import maybe_local_engine
+from backend.app.sources.base import RefreshUnsupported, SourceMisconfigured
 from backend.app.sources.registry import get_source, known_sources
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/games", tags=["games"])
-
-
-def _get_configured_user(db: Session, settings: Settings) -> User:
-    if not settings.lichess_username:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="LICHESS_USERNAME is not configured.",
-        )
-    user = db.scalar(select(User).where(User.lichess_username == settings.lichess_username))
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Configured user not found in DB. Run `make seed` first.",
-        )
-    return user
 
 
 def _to_analyze_response(r: AnalysisResult) -> AnalyzeResponse:
@@ -80,8 +67,21 @@ async def import_games(
         # written before PATCH-time validation existed).
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    user = _get_configured_user(db, settings)
-    result = await ingest(db, user, source, since=payload.since, limit=payload.limit)
+    user = get_configured_user(db, settings)
+    try:
+        result = await ingest(db, user, source, since=payload.since, limit=payload.limit)
+    except SourceMisconfigured as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"{payload.source} returned an error: {e}",
+        )
+    except httpx.HTTPError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not reach {payload.source}: {e}",
+        )
     return ImportResponse(
         source=payload.source,
         imported=result.imported,
@@ -177,7 +177,7 @@ async def refresh_one_game(
     game = db.get(Game, game_id)
     if game is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found.")
-    user = _get_configured_user(db, settings)
+    user = get_configured_user(db, settings)
     try:
         source = get_source(game.source, get_app_settings(db))
     except (KeyError, ValueError) as e:
@@ -185,6 +185,8 @@ async def refresh_one_game(
 
     try:
         result = await refresh_game(db, user, source, game)
+    except RefreshUnsupported as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             raise HTTPException(

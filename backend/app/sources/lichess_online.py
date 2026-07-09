@@ -16,32 +16,9 @@ import httpx
 
 from backend.app.models import User
 from backend.app.sources.base import GameRecord
+from backend.app.sources.pgn_headers import parse_int_header, parse_played_at
 
 LICHESS_API_BASE = "https://lichess.org"
-
-
-def _parse_int(value: str | None) -> int | None:
-    if not value or value == "?":
-        return None
-    try:
-        return int(value)
-    except ValueError:
-        return None
-
-
-def _parse_played_at(headers: chess.pgn.Headers) -> datetime | None:
-    date = headers.get("UTCDate") or headers.get("Date")
-    time = headers.get("UTCTime")
-    if not date or date == "????.??.??":
-        return None
-    try:
-        if time:
-            return datetime.strptime(f"{date} {time}", "%Y.%m.%d %H:%M:%S").replace(
-                tzinfo=timezone.utc
-            )
-        return datetime.strptime(date, "%Y.%m.%d").replace(tzinfo=timezone.utc)
-    except ValueError:
-        return None
 
 
 def _extract_lichess_game_id(site_url: str) -> str:
@@ -79,10 +56,10 @@ def _record_from_game(game: chess.pgn.Game, lichess_username: str) -> GameRecord
         black=black,
         result=headers.get("Result", "*"),
         has_evals="[%eval " in pgn_text,
-        white_elo=_parse_int(headers.get("WhiteElo")),
-        black_elo=_parse_int(headers.get("BlackElo")),
+        white_elo=parse_int_header(headers.get("WhiteElo")),
+        black_elo=parse_int_header(headers.get("BlackElo")),
         time_control=headers.get("TimeControl") or None,
-        played_at=_parse_played_at(headers),
+        played_at=parse_played_at(headers),
     )
 
 

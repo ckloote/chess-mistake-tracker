@@ -6,6 +6,18 @@ from typing import Protocol, runtime_checkable
 from backend.app.models import User
 
 
+class SourceMisconfigured(Exception):
+    """Per-user configuration required by a source is missing or invalid
+    (e.g. no chess.com username on the User row). The API maps this to a 400
+    telling the user what to set."""
+
+
+class RefreshUnsupported(Exception):
+    """The source has no meaningful per-game refresh (e.g. finished chess.com
+    games are immutable and there is no request-analysis flow). The API maps
+    this to a 400."""
+
+
 @dataclass(frozen=True, slots=True)
 class GameRecord:
     """A single ingested game in canonical form. PGN is the source of truth;
@@ -47,5 +59,6 @@ class GameSource(Protocol):
         `(game_id)`-only signature couldn't build a GameRecord. Returns None
         when the fetched data no longer lists the user as a player; raises
         httpx errors for network / upstream failures (the caller maps them
-        to HTTP responses)."""
+        to HTTP responses). Sources where finished games are immutable may
+        raise RefreshUnsupported instead."""
         ...
