@@ -164,6 +164,59 @@ async def test_fetch_stops_at_limit(month: dict) -> None:
     assert [r.source_game_id for r in records] == ["live/140723958581"]
 
 
+def _make_source_with_broken_month(
+    good_url: str, good_payload: dict, broken_url: str, broken_status: int
+) -> ChessComSource:
+    """Archives list both months, but one month endpoint fails — the quirk
+    observed live where /archives lists months that persistently 404."""
+    archives = {"archives": [good_url, broken_url]}  # broken month is newest
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url.endswith("/games/archives"):
+            return httpx.Response(200, json=archives)
+        if url == good_url:
+            return httpx.Response(200, json=good_payload)
+        return httpx.Response(broken_status)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    return ChessComSource(client=client)
+
+
+async def test_fetch_skips_month_that_404s(month: dict) -> None:
+    """Observed live (hikaru, 2026-07): /archives can list months whose
+    endpoint persistently 404s. A bad month is skipped; the rest import."""
+    good = f"{CHESSCOM_API_BASE}/pub/player/TestUser/games/2025/06"
+    broken = f"{CHESSCOM_API_BASE}/pub/player/TestUser/games/2025/07"
+    source = _make_source_with_broken_month(good, month, broken, 404)
+    records = await _collect(source)
+    assert [r.source_game_id for r in records] == [
+        "live/140723958581",
+        "daily/747757185",
+    ]
+
+
+async def test_fetch_propagates_non_404_month_errors(month: dict) -> None:
+    """Only the 404 quirk is skipped — a 429 (rate limit) must surface."""
+    good = f"{CHESSCOM_API_BASE}/pub/player/TestUser/games/2025/06"
+    broken = f"{CHESSCOM_API_BASE}/pub/player/TestUser/games/2025/07"
+    source = _make_source_with_broken_month(good, month, broken, 429)
+    with pytest.raises(httpx.HTTPStatusError):
+        await _collect(source)
+
+
+async def test_fetch_propagates_archives_404() -> None:
+    """A 404 on the /archives index itself (user doesn't exist) still raises."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    source = ChessComSource(client=client)
+    with pytest.raises(httpx.HTTPStatusError):
+        await _collect(source)
+
+
 async def test_fetch_stops_at_since(month: dict) -> None:
     url = f"{CHESSCOM_API_BASE}/pub/player/TestUser/games/2025/06"
     source = _make_source({url: month})

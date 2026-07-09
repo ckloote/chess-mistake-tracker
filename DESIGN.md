@@ -309,6 +309,7 @@ anything else → 502).
   - `source_game_id` keeps the URL's type segment — `live/747757185` / `daily/747757185` — so the frontend can rebuild `https://www.chess.com/game/{id}` links.
   - **Refresh is unsupported** (`fetch_game_by_id` raises `RefreshUnsupported` → 400): finished chess.com games are immutable and there is no request-analysis flow, so refresh has no purpose (and a real implementation would cost O(months) archive scans).
   - Etiquette: requests are strictly serial (parallel fetches from one IP get 429) and carry a descriptive `User-Agent`.
+  - Resilience: the `/archives` index can list months whose endpoint persistently 404s (observed live against a high-volume account, 2026-07). A 404 month is skipped with a WARNING so one bad month can't fail the whole import; any other upstream error (429, 5xx) still propagates and surfaces as a 502. A 404 on the `/archives` index itself (user doesn't exist) also propagates.
   - Daily/correspondence games import too; their `N/seconds` time control maps to the `correspondence` speed bucket (`speed_of`), while per-move clock math stays undefined for them.
 
 ## Engine / Analyzer Abstractions

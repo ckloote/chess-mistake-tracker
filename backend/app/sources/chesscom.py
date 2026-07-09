@@ -18,6 +18,7 @@ PGN analyzer unchanged.
 from __future__ import annotations
 
 import io
+import logging
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 
@@ -29,6 +30,7 @@ from backend.app.sources.base import GameRecord, RefreshUnsupported, SourceMisco
 from backend.app.sources.pgn_headers import parse_played_at
 
 CHESSCOM_API_BASE = "https://api.chess.com"
+log = logging.getLogger(__name__)
 
 # Descriptive UA per chess.com's published API etiquette.
 USER_AGENT = "chess-mistake-tracker (personal analysis tool)"
@@ -126,7 +128,22 @@ class ChessComSource:
             # Archive list is chronological; walk months newest-first so a
             # `limit` covers the most recent games.
             for month_url in reversed(archives.get("archives", [])):
-                month = await self._get_json(client, month_url)
+                try:
+                    month = await self._get_json(client, month_url)
+                except httpx.HTTPStatusError as e:
+                    # Observed live: the /archives index can list months whose
+                    # endpoint persistently 404s (e.g. hikaru's three most
+                    # recent months, 2026-07). One bad month must not kill the
+                    # whole import — skip it and keep walking. Anything else
+                    # (429 rate limit, 5xx) still propagates.
+                    if e.response.status_code == 404:
+                        log.warning(
+                            "chess.com month archive %s returned 404 despite "
+                            "being listed in /archives; skipping that month.",
+                            month_url,
+                        )
+                        continue
+                    raise
                 games = sorted(
                     month.get("games", []),
                     key=lambda g: g.get("end_time", 0),
