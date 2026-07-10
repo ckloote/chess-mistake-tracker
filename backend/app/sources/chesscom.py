@@ -121,8 +121,13 @@ class ChessComSource:
         owns_client = self._client is None
         client = self._client or httpx.AsyncClient(timeout=httpx.Timeout(60.0))
         try:
+            # chess.com canonicalizes player URLs to lowercase and
+            # 301-redirects mixed case; httpx doesn't follow redirects, so a
+            # display-case username ("Not_Mikhail_Tal") would 502 every
+            # import. Game matching stays case-insensitive either way.
             archives = await self._get_json(
-                client, f"{CHESSCOM_API_BASE}/pub/player/{username}/games/archives"
+                client,
+                f"{CHESSCOM_API_BASE}/pub/player/{username.lower()}/games/archives",
             )
             yielded = 0
             # Archive list is chronological; walk months newest-first so a

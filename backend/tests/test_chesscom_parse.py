@@ -205,6 +205,30 @@ async def test_fetch_propagates_non_404_month_errors(month: dict) -> None:
         await _collect(source)
 
 
+async def test_fetch_lowercases_username_in_archives_url(month: dict) -> None:
+    """chess.com 301-redirects mixed-case player URLs to lowercase (observed
+    live with 'Not_Mikhail_Tal') and httpx doesn't follow redirects — the
+    archives URL must be built from the lowercased username."""
+    archives_url = f"{CHESSCOM_API_BASE}/pub/player/testuser/games/archives"
+    month_url = f"{CHESSCOM_API_BASE}/pub/player/testuser/games/2025/06"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url == archives_url:
+            return httpx.Response(200, json={"archives": [month_url]})
+        if url == month_url:
+            return httpx.Response(200, json=month)
+        # Anything else (e.g. the mixed-case URL): mimic the real API's 301,
+        # which raise_for_status treats as an error when not followed.
+        return httpx.Response(301, headers={"location": url.lower()})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    source = ChessComSource(client=client)
+    # _user() carries the display-case "TestUser".
+    records = await _collect(source)
+    assert len(records) == 2
+
+
 async def test_fetch_propagates_archives_404() -> None:
     """A 404 on the /archives index itself (user doesn't exist) still raises."""
 

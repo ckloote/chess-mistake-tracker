@@ -40,7 +40,17 @@ export async function apiFetch<T>(path: string, opts: FetchOptions = {}): Promis
     } catch {
       // ignore — server returned no JSON body
     }
-    throw new ApiError(response.status, `HTTP ${response.status}`, detail)
+    // Surface FastAPI's `detail` string in the message so a plain
+    // String(error) shows the actionable text ("chesscom returned an
+    // error: …"), not just the bare status code.
+    let message = `HTTP ${response.status}`
+    if (detail && typeof detail === 'object' && 'detail' in detail) {
+      const inner = (detail as { detail?: unknown }).detail
+      if (typeof inner === 'string' && inner) {
+        message = `HTTP ${response.status}: ${inner}`
+      }
+    }
+    throw new ApiError(response.status, message, detail)
   }
   if (response.status === 204) {
     return undefined as T
